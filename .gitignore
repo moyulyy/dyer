@@ -1,0 +1,26 @@
+# 运行数据与本地文件
+data/
+engine/browser_data/
+engine/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 环境变量与本地设置
+.env
+.preview/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
+
+# Reasonix 会话元数据
+.reasonix/

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dyer · 抖音数据采集</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo">dy</span>
+      <div class="brand-text">
+        <strong>dyer</strong>
+        <small>抖音数据采集</small>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="jobs">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+        <span>采集任务</span>
+      </button>
+      <button class="nav-item" data-view="data">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 10h16M9 10v9" /></svg>
+        <span>数据浏览</span>
+      </button>
+      <button class="nav-item" data-view="overview">
+        <svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7" /></svg>
+        <span>数据概览</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div id="engine-pill" class="pill pill-muted">引擎检测中…</div>
+      <button id="btn-settings" class="ghost-btn">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" /><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" /></svg>
+        <span>设置</span>
+      </button>
+      <p class="disclaimer">仅供学习研究，请遵守平台规则与法律法规</p>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="view-title">采集任务</h1>
+        <p id="view-sub" class="muted">配置抖音采集任务，实时查看运行日志</p>
+      </div>
+      <div class="topbar-right">
+        <span id="data-dir" class="mono muted small"></span>
+        <button class="btn btn-ghost" id="btn-refresh">刷新</button>
+      </div>
+    </header>
+
+    <!-- ===================== 采集任务 ===================== -->
+    <section id="view-jobs" class="view">
+      <div class="card form-card">
+        <div class="card-head">
+          <h2>新建采集任务</h2>
+          <div class="segmented" id="crawler-type">
+            <button class="seg active" data-type="search">关键词搜索</button>
+            <button class="seg" data-type="detail">指定作品</button>
+            <button class="seg" data-type="creator">创作者主页</button>
+          </div>
+        </div>
+
+        <form id="job-form">
+          <div class="field" data-for="search">
+            <label for="keywords">搜索关键词<em>多个关键词用英文逗号分隔</em></label>
+            <textarea id="keywords" rows="2" placeholder="例如：编程副业, 剪辑教程, 露营装备"></textarea>
+          </div>
+
+          <div class="field hidden" data-for="detail">
+            <label for="aweme-ids">作品链接或 ID<em>每行一个，支持短链、完整链接、纯 ID</em></label>
+            <textarea id="aweme-ids" rows="3" placeholder="https://www.douyin.com/video/7525538910311632128"></textarea>
+          </div>
+
+          <div class="field hidden" data-for="creator">
+            <label for="creator-ids">创作者主页<em>每行一个，支持主页链接或 sec_user_id</em></label>
+            <textarea id="creator-ids" rows="3" placeholder="https://www.douyin.com/user/MS4wLjABAAAATJPY7LAlaa5X..."></textarea>
+          </div>
+
+          <div class="grid-4">
+            <div class="field">
+              <label for="max-notes">最多作品数</label>
+              <input id="max-notes" type="number" min="10" max="1000" step="10" value="20" />
+            </div>
+            <div class="field">
+              <label for="max-comments">单作品评论数</label>
+              <input id="max-comments" type="number" min="0" max="5000" step="10" value="20" />
+            </div>
+            <div class="field">
+              <label for="start-page">起始页码</label>
+              <input id="start-page" type="number" min="1" value="1" />
+            </div>
+            <div class="field">
+              <label for="sleep-sec">请求间隔（秒）</label>
+              <input id="sleep-sec" type="number" min="0" max="60" step="0.5" value="2" />
+            </div>
+          </div>
+
+          <div class="switches">
+            <label class="switch"><input type="checkbox" id="enable-comments" checked /><span>采集评论</span></label>
+            <label class="switch"><input type="checkbox" id="enable-sub-comments" /><span>采集二级评论</span></label>
+            <label class="switch"><input type="checkbox" id="enable-media" /><span>下载视频/图片</span></label>
+            <label class="switch"><input type="checkbox" id="headless" /><span>无头模式</span></label>
+          </div>
+
+          <div class="login-row">
+            <div class="field">
+              <label for="login-type">登录方式</label>
+              <select id="login-type">
+                <option value="qrcode">扫码登录（需要可见浏览器窗口）</option>
+                <option value="cookie">Cookie 登录</option>
+              </select>
+            </div>
+            <div class="field cookie-field hidden" id="cookie-field">
+              <label for="cookie">Cookie<em>建议先在设置中保存，任务将自动复用</em></label>
+              <div class="input-inline">
+                <input id="cookie" type="password" placeholder="从浏览器复制 douyin.com 的 Cookie" autocomplete="off" />
+                <button type="button" class="btn btn-ghost" id="btn-save-cookie">保存 Cookie</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span class="muted small" id="form-hint">扫码登录会启动可见浏览器，扫码完成后自动开始采集</span>
+            <button type="submit" class="btn btn-primary" id="btn-start">
+              <svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>
+              开始采集
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>任务列表</h2>
+          <span class="muted small" id="jobs-summary"></span>
+        </div>
+        <div id="jobs-list" class="jobs-list">
+          <div class="empty">暂无任务，先在上方创建一个采集任务吧</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 数据浏览 ===================== -->
+    <section id="view-data" class="view hidden">
+      <div class="card">
+        <div class="filters">
+          <input id="filter-q" class="grow" type="search" placeholder="搜索标题、作者或作品 ID" />
+          <input id="filter-keyword" type="search" placeholder="来源关键词" />
+          <select id="filter-sort">
+            <option value="create_time">按发布时间</option>
+            <option value="liked_count">按点赞数</option>
+            <option value="comment_count">按评论数</option>
+            <option value="add_ts">按采集时间</option>
+          </select>
+          <select id="filter-order">
+            <option value="desc">降序</option>
+            <option value="asc">升序</option>
+          </select>
+          <button class="btn btn-primary" id="btn-search">查询</button>
+          <button class="btn btn-ghost" id="btn-export-csv">导出 CSV</button>
+          <button class="btn btn-ghost" id="btn-export-json">导出 JSON</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:92px">封面</th>
+                <th>作品</th>
+                <th style="width:150px">作者</th>
+                <th style="width:90px" class="num">点赞</th>
+                <th style="width:90px" class="num">评论</th>
+                <th style="width:90px" class="num">分享</th>
+                <th style="width:150px">发布时间</th>
+              </tr>
+            </thead>
+            <tbody id="videos-body"></tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <span class="muted small" id="videos-total"></span>
+          <div class="pager-actions">
+            <button class="btn btn-ghost" id="btn-prev">上一页</button>
+            <span id="page-info" class="small"></span>
+            <button class="btn btn-ghost" id="btn-next">下一页</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 数据概览 ===================== -->
+    <section id="view-overview" class="view hidden">
+      <div class="stat-grid">
+        <div class="card stat-card">
+          <span class="stat-label">作品总数</span>
+          <strong id="stat-videos">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">评论总数</span>
+          <strong id="stat-comments">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">累计点赞</span>
+          <strong id="stat-liked">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">采集任务</span>
+          <strong id="stat-jobs">0</strong>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="card">
+          <div class="card-head"><h2>关键词分布</h2></div>
+          <div id="keyword-bars" class="bars"><div class="empty">暂无数据</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>每日作品量</h2></div>
+          <div id="daily-bars" class="daily"><div class="empty">暂无数据</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>高赞作品</h2></div>
+        <div id="hot-videos" class="hot-list"><div class="empty">暂无数据</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== 侧边抽屉 ===================== -->
+<div id="drawer-mask" class="drawer-mask hidden"></div>
+<aside id="drawer" class="drawer hidden">
+  <div class="drawer-head">
+    <div>
+      <h3 id="drawer-title">运行日志</h3>
+      <p class="muted small" id="drawer-sub"></p>
+    </div>
+    <button class="icon-btn" id="drawer-close" aria-label="关闭">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<!-- ===================== 设置弹窗 ===================== -->
+<div id="modal-mask" class="modal-mask hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>设置</h3>
+      <button class="icon-btn" id="modal-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="settings-cookie">默认 Cookie<em>保存在 <span id="settings-path" class="mono">data/settings.json</span>，Cookie 登录的任务会自动复用</em></label>
+        <textarea id="settings-cookie" rows="5" placeholder="douyin.com 的 Cookie 字符串"></textarea>
+      </div>
+      <div id="engine-info" class="engine-info"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btn-clear-cookie">清空</button>
+      <button class="btn btn-primary" id="btn-save-settings">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
