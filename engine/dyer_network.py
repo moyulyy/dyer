@@ -462,6 +462,12 @@ async def open_douyin_session(crawler: DouYinCrawler, playwright) -> DouYinClien
         log("扩散采集不支持 CDP 模式，已回退到标准 Playwright 模式")
         config.ENABLE_CDP_MODE = False
 
+    # 扫码登录必须能渲染抖音登录框；无头浏览器会被风控拦到滑块验证页，
+    # 登录框永远不出现。这里自动切换为有头（二维码仍会落盘并在网页弹窗展示）。
+    if config.LOGIN_TYPE == "qrcode" and config.HEADLESS:
+        log("扫码登录需要渲染登录框，检测到无头模式，自动切换为有头模式")
+        config.HEADLESS = False
+
     browser_context = None
     last_error: Optional[Exception] = None
     local_chrome = str(getattr(config, "BROWSER_EXECUTABLE", "") or "")
