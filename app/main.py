@@ -14,6 +14,7 @@ from app import config
 from app.db import init_db, mark_stale_jobs_failed
 from app.jobs import job_manager
 from app.routes import router
+from app.social.routes import router as social_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(social_router)
 app.mount("/static", StaticFiles(directory=str(config.WWW_DIR)), name="static")
 
 

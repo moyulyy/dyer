@@ -21,4 +21,5 @@
 
 运行时依赖见 `requirements.txt`，均由各自的许可证授权，主要包括：
 FastAPI（MIT）、Uvicorn（BSD）、SQLAlchemy（MIT）、Playwright（Apache-2.0）、
-httpx（BSD）、Pydantic（MIT）、PyExecJS（MIT）、Pillow（HPND）等。
+httpx（BSD）、Pydantic（MIT）、PyExecJS（MIT）、Pillow（HPND）、
+NetworkX（BSD-3-Clause，用于社交网络指标计算）等。

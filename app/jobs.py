@@ -61,6 +61,8 @@ def job_to_dict(job: Job) -> Dict[str, Any]:
         "error": job.error,
         "video_count": job.video_count,
         "comment_count": job.comment_count,
+        "user_count": job.user_count,
+        "relation_count": job.relation_count,
         "has_qrcode": bool(job.qrcode_path and Path(job.qrcode_path).exists()),
     }
 
@@ -128,6 +130,10 @@ class JobManager:
             "cookie": payload.cookie,
             "headless": payload.headless,
             "sleep_sec": payload.sleep_sec,
+            "expand_depth": payload.expand_depth,
+            "max_users": payload.max_users,
+            "max_awemes_per_user": payload.max_awemes_per_user,
+            "include_following": payload.include_following,
             "save_option": "jsonl",
             "data_dir": str(data_dir),
             "qrcode_path": str(qrcode_path),
@@ -185,6 +191,10 @@ class JobManager:
             cookie=spec.get("cookie", ""),
             headless=spec.get("headless", False),
             sleep_sec=spec.get("sleep_sec", 2.0),
+            expand_depth=spec.get("expand_depth", 2),
+            max_users=spec.get("max_users", 50),
+            max_awemes_per_user=spec.get("max_awemes_per_user", 10),
+            include_following=spec.get("include_following", False),
         )
         return await self.create_job(payload)
 
@@ -266,18 +276,41 @@ class JobManager:
         async with SessionLocal() as session:
             job = await session.get(Job, job_id)
             data_dir = job.data_dir if job else str(config.JOBS_DIR / job_id)
+            crawler_type = job.crawler_type if job else "search"
             stopped = job_id in self._stop_requested
         self._stop_requested.discard(job_id)
 
-        imported = {"videos": 0, "comments": 0}
+        imported = {"videos": 0, "comments": 0, "users": 0, "relations": 0}
         try:
-            imported = await import_job_data(job_id, Path(data_dir) / "data")
-            if imported["videos"]:
+            if crawler_type == "network":
+                from app.social.importer import import_network_data
+
+                imported = await import_network_data(job_id, Path(data_dir) / "data")
                 self._append_log(
                     job_id,
-                    f"[dyer] 已导入 {imported['videos']} 个作品、{imported['comments']} 条评论",
+                    "[dyer] 已入库 {} 个用户、{} 条关系、{} 个作品、{} 条评论（原始响应 {} 条）".format(
+                        imported["users"], imported["relations"], imported["videos"],
+                        imported["comments"], imported["raw"],
+                    ),
                     level="success",
                 )
+                try:
+                    from app.social.graph import analyze_network
+
+                    run_id = await analyze_network(job_id=job_id)
+                    self._append_log(
+                        job_id, f"[dyer] 社交网络分析完成（分析批次 #{run_id}）", level="success"
+                    )
+                except Exception as exc:
+                    self._append_log(job_id, f"[dyer] 社交网络分析失败: {exc}", level="warning")
+            else:
+                imported = await import_job_data(job_id, Path(data_dir) / "data")
+                if imported["videos"]:
+                    self._append_log(
+                        job_id,
+                        f"[dyer] 已导入 {imported['videos']} 个作品、{imported['comments']} 条评论",
+                        level="success",
+                    )
         except Exception as exc:
             self._append_log(job_id, f"[dyer] 导入数据失败: {exc}", level="error")
 
@@ -294,6 +327,8 @@ class JobManager:
             error=error,
             video_count=imported["videos"],
             comment_count=imported["comments"],
+            user_count=imported.get("users", 0),
+            relation_count=imported.get("relations", 0),
         )
 
     async def _finish(
@@ -305,6 +340,8 @@ class JobManager:
         error: Optional[str] = None,
         video_count: int = 0,
         comment_count: int = 0,
+        user_count: int = 0,
+        relation_count: int = 0,
     ) -> None:
         async with SessionLocal() as session:
             job = await session.get(Job, job_id)
@@ -316,6 +353,8 @@ class JobManager:
             job.error = error
             job.video_count = video_count or job.video_count
             job.comment_count = comment_count or job.comment_count
+            job.user_count = user_count or job.user_count
+            job.relation_count = relation_count or job.relation_count
             job.pid = None
             await session.commit()
             await session.refresh(job)

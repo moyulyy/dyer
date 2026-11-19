@@ -59,7 +59,7 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
     import config
 
     crawler_type = job.get("crawler_type", "search")
-    if crawler_type not in ("search", "detail", "creator"):
+    if crawler_type not in ("search", "detail", "creator", "network"):
         raise ValueError(f"不支持的采集类型: {crawler_type}")
 
     config.PLATFORM = "dy"
@@ -109,6 +109,10 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
         "enable_comments": config.ENABLE_GET_COMMENTS,
         "enable_sub_comments": config.ENABLE_GET_SUB_COMMENTS,
         "max_comments": config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES,
+        "expand_depth": int(job.get("expand_depth", 2) or 0),
+        "max_users": int(job.get("max_users", 50) or 50),
+        "max_awemes_per_user": int(job.get("max_awemes_per_user", 10) or 10),
+        "include_following": bool(job.get("include_following", False)),
         "enable_media": config.ENABLE_GET_MEDIA,
         "headless": config.HEADLESS,
         "enable_cdp": config.ENABLE_CDP_MODE,
@@ -121,6 +125,17 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
 async def run_crawler(job: Dict[str, Any]) -> None:
     snapshot = apply_job_config(job)
     print(f"[dyer] 任务配置: {json.dumps(snapshot, ensure_ascii=False)}", flush=True)
+
+    if job.get("crawler_type") == "network":
+        # 社交网络扩散采集：以用户为中心，输出 network/raw.jsonl
+        from playwright.async_api import async_playwright
+
+        from dyer_network import run_network
+
+        async with async_playwright() as playwright:
+            summary = await run_network(job, playwright)
+        print(f"[dyer] 扩散采集统计: {json.dumps(summary, ensure_ascii=False)}", flush=True)
+        return
 
     from media_platform.douyin import DouYinCrawler
 

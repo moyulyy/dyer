@@ -26,6 +26,7 @@
 
 import random
 import re
+from pathlib import Path
 from typing import Optional
 
 import execjs
@@ -34,7 +35,9 @@ from playwright.async_api import Page
 from model.m_douyin import VideoUrlInfo, CreatorUrlInfo
 from tools.crawler_util import extract_url_params_to_dict
 
-douyin_sign_obj = execjs.compile(open('libs/douyin.js', encoding='utf-8-sig').read())
+# dyer 改动：按文件位置定位签名脚本，不再依赖当前工作目录。
+_DOUYIN_JS = Path(__file__).resolve().parents[2] / "libs" / "douyin.js"
+douyin_sign_obj = execjs.compile(_DOUYIN_JS.read_text(encoding="utf-8-sig"))
 
 def get_web_id():
     """

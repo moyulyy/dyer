@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-CrawlerType = Literal["search", "detail", "creator"]
+CrawlerType = Literal["search", "detail", "creator", "network"]
 
 
 class JobCreate(BaseModel):
@@ -26,10 +26,20 @@ class JobCreate(BaseModel):
     headless: bool = False
     sleep_sec: float = Field(default=2.0, ge=0, le=60)
 
+    # ---- 社交网络扩散采集（crawler_type=network）----
+    expand_depth: int = Field(default=2, ge=0, le=3, description="扩散层级，0 表示只采种子用户")
+    max_users: int = Field(default=50, ge=2, le=500, description="本次最多发现的用户数")
+    max_awemes_per_user: int = Field(default=10, ge=0, le=50, description="每个用户最多采集的作品数")
+    include_following: bool = Field(
+        default=False, description="实验性：尝试采集关注列表（接口受限时自动跳过）"
+    )
+
     @model_validator(mode="after")
     def _validate(self) -> "JobCreate":
         if self.crawler_type == "search" and not self.keywords:
             raise ValueError("关键词搜索至少需要一个关键词")
+        if self.crawler_type == "network" and not (self.keywords or self.aweme_ids or self.creator_ids):
+            raise ValueError("扩散采集至少需要一个种子：关键词、作品或创作者")
         if self.crawler_type == "detail" and not self.aweme_ids:
             raise ValueError("作品采集至少需要一个作品链接或 ID")
         if self.crawler_type == "creator" and not self.creator_ids:
