@@ -342,6 +342,7 @@ class DouYinCrawler(AbstractCrawler):
         headless: bool = True,
         channel: Optional[str] = None,
         args: Optional[List[str]] = None,
+        executable_path: Optional[str] = None,
     ) -> BrowserContext:
         """Launch browser and create browser context
 
@@ -352,6 +353,9 @@ class DouYinCrawler(AbstractCrawler):
         extra: Dict[str, Any] = {}
         if channel:
             extra["channel"] = channel
+        if executable_path:
+            # 自定义 Chrome/Chromium 可执行文件（如项目内解压的 Chrome）
+            extra["executable_path"] = executable_path
         if args:
             extra["args"] = args
         if config.SAVE_LOGIN_STATE:

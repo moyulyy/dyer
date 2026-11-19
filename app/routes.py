@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Annotated, Any, Dict, Literal
@@ -28,6 +29,23 @@ async def health() -> Dict[str, Any]:
     return {"status": "ok", "time": __import__("time").time()}
 
 
+def _detect_local_chrome() -> str:
+    """检测可用的本地 Chrome/Chromium（项目内 chrome-extract 优先）。"""
+    candidates = [
+        os.environ.get("DYER_CHROME_PATH", ""),
+        str(config.BASE_DIR / "chrome-extract" / "opt" / "google" / "chrome" / "chrome"),
+        "/opt/google/chrome/chrome",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return ""
+
+
 @router.get("/api/meta")
 async def meta() -> Dict[str, Any]:
     engine_entry = config.ENGINE_DIR / "job_runner.py"
@@ -47,6 +65,7 @@ async def meta() -> Dict[str, Any]:
             "ready": engine_entry.exists(),
             "playwright": playwright_installed,
             "browsers": browsers_installed,
+            "chrome": _detect_local_chrome(),
             "python": sys.version.split()[0],
         },
         "data_dir": str(config.DATA_DIR),

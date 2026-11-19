@@ -425,7 +425,7 @@ class NetworkExplorer:
 
 
 # --------------------------------------------------------------------------- 会话
-def _browser_attempts() -> List[Tuple[str, bool, Optional[str], str]]:
+def _browser_attempts() -> List[Tuple[str, bool, Optional[str], Optional[str], str]]:
     """按优先级生成启动尝试：(模式, 是否无头, channel, 说明)。
 
     - cdp：连接用户本地的 Chrome（需以 `--remote-debugging-port` 启动），
@@ -437,14 +437,20 @@ def _browser_attempts() -> List[Tuple[str, bool, Optional[str], str]]:
     有头浏览器会直接崩溃；此时自动降级为无头，二维码仍可在网页弹窗里扫码。
     """
     preferred = str(getattr(config, "BROWSER_CHANNEL", "auto") or "auto")
-    attempts: List[Tuple[str, bool, Optional[str], str]] = []
+    local_chrome = str(getattr(config, "BROWSER_EXECUTABLE", "") or "")
+    attempts: List[Tuple[str, bool, Optional[str], Optional[str], str]] = []
     if preferred == "cdp":
-        attempts.append(("cdp", config.HEADLESS, None, "连接本地 Chrome（CDP）"))
+        attempts.append(("cdp", config.HEADLESS, None, None, "连接本地 Chrome（CDP）"))
+    if preferred in ("auto", "bundled") and local_chrome:
+        attempts.append(("playwright", config.HEADLESS, None, local_chrome, "本地 Chrome"))
     if preferred == "chrome":
-        attempts.append(("playwright", config.HEADLESS, "chrome", "系统 Chrome"))
-    attempts.append(("playwright", config.HEADLESS, None, "内置 Chromium"))
+        attempts.append(("playwright", config.HEADLESS, "chrome", None, "系统 Chrome"))
+    if not local_chrome or preferred not in ("auto", "bundled"):
+        attempts.append(("playwright", config.HEADLESS, None, None, "内置 Chromium"))
     if not config.HEADLESS:
-        attempts.append(("playwright", True, None, "内置 Chromium（无头降级）"))
+        attempts.append(
+            ("playwright", True, None, local_chrome or None, "无头降级")
+        )
     return attempts
 
 
@@ -456,10 +462,13 @@ async def open_douyin_session(crawler: DouYinCrawler, playwright) -> DouYinClien
 
     browser_context = None
     last_error: Optional[Exception] = None
-    for mode, headless, channel, label in _browser_attempts():
+    local_chrome = str(getattr(config, "BROWSER_EXECUTABLE", "") or "")
+    for mode, headless, channel, executable, label in _browser_attempts():
         try:
             if mode == "cdp":
                 config.ENABLE_CDP_MODE = True
+                if local_chrome:
+                    config.CUSTOM_BROWSER_PATH = local_chrome
                 browser_context = await crawler.launch_browser_with_cdp(
                     playwright, None, None, headless=headless
                 )
@@ -470,6 +479,7 @@ async def open_douyin_session(crawler: DouYinCrawler, playwright) -> DouYinClien
                     None,
                     headless=headless,
                     channel=channel,
+                    executable_path=executable,
                 )
             if headless != config.HEADLESS:
                 config.HEADLESS = True

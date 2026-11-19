@@ -133,6 +133,7 @@ async function loadMeta() {
       ["Python", engine.python],
       ["Playwright", engine.playwright ? "已安装" : "未安装"],
       ["Chromium", engine.browsers ? "已安装" : "未安装"],
+      ["本地 Chrome", engine.chrome ? engine.chrome : "未检测到"],
       ["并发任务数", meta.max_concurrent_jobs],
       ["Cookie", meta.has_cookie ? "已保存" : "未保存"],
     ]

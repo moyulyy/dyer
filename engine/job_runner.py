@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict
 
 ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -52,6 +53,27 @@ def _as_list(value: Any) -> list:
             if part:
                 result.append(part)
     return result
+
+
+def detect_chrome_executable() -> str:
+    """检测可用的 Chrome/Chromium 可执行文件。
+
+    优先顺序：任务参数 > 环境变量 > 项目内 chrome-extract > 系统安装路径。
+    """
+    engine_dir = Path(ENGINE_DIR)
+    candidates = [
+        os.environ.get("DYER_CHROME_PATH", ""),
+        str(engine_dir.parent / "chrome-extract" / "opt" / "google" / "chrome" / "chrome"),
+        "/opt/google/chrome/chrome",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return ""
 
 
 def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -87,6 +109,10 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
     config.HEADLESS = bool(job.get("headless", True))
     # auto | chrome | chromium；chrome 需要系统安装 Google Chrome，失败会自动回退
     config.BROWSER_CHANNEL = str(job.get("browser_channel", "auto") or "auto")
+    config.BROWSER_EXECUTABLE = str(job.get("browser_executable") or detect_chrome_executable())
+    if config.BROWSER_EXECUTABLE:
+        # CDP 模式会读取该配置启动本地浏览器
+        config.CUSTOM_BROWSER_PATH = config.BROWSER_EXECUTABLE
     config.ENABLE_CDP_MODE = bool(job.get("enable_cdp", False))
     config.CDP_HEADLESS = config.HEADLESS
     config.SAVE_LOGIN_STATE = bool(job.get("save_login_state", True))
@@ -118,6 +144,7 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
         "enable_media": config.ENABLE_GET_MEDIA,
         "headless": config.HEADLESS,
         "browser_channel": getattr(config, "BROWSER_CHANNEL", "auto"),
+        "browser_executable": getattr(config, "BROWSER_EXECUTABLE", ""),
         "enable_cdp": config.ENABLE_CDP_MODE,
         "save_option": config.SAVE_DATA_OPTION,
         "data_dir": config.SAVE_DATA_PATH,

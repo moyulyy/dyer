@@ -25,7 +25,7 @@ class JobCreate(BaseModel):
     cookie: str = ""
     # 默认无头：二维码通过网页弹窗展示，服务器/容器环境也能扫码
     headless: bool = True
-    browser_channel: Literal["auto", "chrome", "chromium", "cdp"] = "auto"
+    browser_channel: Literal["auto", "bundled", "chrome", "chromium", "cdp"] = "auto"
     sleep_sec: float = Field(default=2.0, ge=0, le=60)
 
     # ---- 社交网络扩散采集（crawler_type=network）----

@@ -28,3 +28,6 @@ venv/
 # 本地安装包与解压产物（不应提交）
 *.deb
 chrome-extract/
+
+# 浏览器登录态缓存
+browser_data/

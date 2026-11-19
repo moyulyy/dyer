@@ -92,14 +92,17 @@ python run.py
 
 | 选项 | 说明 |
 | --- | --- |
-| 自动（内置 Chromium） | Playwright 自带浏览器；有头启动失败时自动降级为无头 |
+| 自动（优先本地 Chrome） | 依次尝试：项目内 `chrome-extract/` → 环境变量 `DYER_CHROME_PATH` → 系统安装的 Chrome → 内置 Chromium |
+| 项目内 Chrome | 强制使用 `chrome-extract/opt/google/chrome/chrome`（把 Chrome 解压到项目根目录即可） |
 | 系统 Chrome | Playwright `channel="chrome"`，使用系统安装的 Google Chrome |
-| 内置 Chromium | 强制使用 Playwright 自带浏览器 |
+| 内置 Chromium | Playwright 自带浏览器 |
 | 连接本地 Chrome（CDP） | 连接用户自己以 `--remote-debugging-port=9222` 启动的 Chrome，使用真实浏览器环境与登录态 |
 
 **环境提示**
 
-- 容器/服务器通常没有可用的 X11 显示，有头浏览器会启动失败；引擎会自动降级为无头，二维码仍可在网页弹窗中扫码。
+- 若项目根目录存在 `chrome-extract/opt/google/chrome/chrome`（Chrome 解压版），引擎会自动优先使用它；实测该 Chrome 有头模式可正常打开抖音登录页并生成二维码。
+- 纯无头访问抖音可能被风控（返回验证码页）；此时请使用本地 Chrome、CDP 或 Cookie 登录。
+- 有头浏览器在缺少 X11 的环境下可能启动失败，引擎会自动降级为无头，二维码仍可在网页弹窗中扫码。
 - 抖音对无头浏览器和数据中心 IP 有风控，可能出现「验证码中间页」。此时优先使用「连接本地 Chrome（CDP）」或 Cookie 登录。
 - 扫码登录要求浏览器能正常访问 `douyin.com`；网络受限时请改用 Cookie。
 
