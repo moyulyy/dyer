@@ -101,11 +101,11 @@ then
   HAS_BROWSER=0
 fi
 
-# 本地 Chrome 检测（与引擎逻辑保持一致）
+# 本地 Chrome 检测：项目目录下的 chrome-extract 优先，其次环境变量与系统安装
 CHROME=""
 for candidate in \
-  "${DYER_CHROME_PATH:-}" \
   "$ROOT_DIR/chrome-extract/opt/google/chrome/chrome" \
+  "${DYER_CHROME_PATH:-}" \
   "/opt/google/chrome/chrome" \
   "/usr/bin/google-chrome" \
   "/usr/bin/google-chrome-stable" \
@@ -117,6 +117,10 @@ do
     break
   fi
 done
+if [[ -n "$CHROME" ]]; then
+  # 显式告知服务与采集子进程使用这个 Chrome
+  export DYER_CHROME_PATH="$CHROME"
+fi
 
 DATA_DIR="${DYER_DATA_DIR:-$ROOT_DIR/data}"
 
@@ -127,6 +131,7 @@ if [[ "$CHECK_ONLY" == "1" ]]; then
   log "依赖状态          : $([[ -f "$DEPS_STAMP" ]] && echo "已安装" || echo "未安装（运行 ./run.sh 自动安装）")"
   log "Playwright 浏览器 : $([[ "$HAS_BROWSER" == "1" ]] && echo "可用" || echo "未安装（可执行 $PY -m playwright install chromium）")"
   log "本地 Chrome       : ${CHROME:-未检测到（可放 chrome-extract/ 或设置 DYER_CHROME_PATH）}"
+  log "浏览器            : $([[ -n "$CHROME" ]] && echo "使用本地 Chrome（$CHROME）" || echo "使用 Playwright 内置 Chromium")"
   log "数据目录          : $DATA_DIR"
   log "监听地址          : http://$HOST:$PORT"
   if port_in_use "$PORT"; then
@@ -175,7 +180,7 @@ if port_in_use "$PORT"; then
 fi
 
 log "Python            : $("$PY" -V 2>&1)"
-log "本地 Chrome       : ${CHROME:-未检测到（将使用 Playwright 内置 Chromium）}"
+log "浏览器            : ${CHROME:-未检测到本地 Chrome，将使用 Playwright 内置 Chromium}"
 log "数据目录          : $DATA_DIR"
 log "访问地址          : http://$HOST:$PORT"
 log "API 文档          : http://$HOST:$PORT/docs"
@@ -185,4 +190,5 @@ exec env \
   DYER_HOST="$HOST" \
   DYER_PORT="$PORT" \
   DYER_RELOAD="$RELOAD" \
+  DYER_CHROME_PATH="${CHROME:-}" \
   "$PY" "$ROOT_DIR/run.py"
