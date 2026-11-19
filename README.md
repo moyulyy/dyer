@@ -67,16 +67,24 @@ dyer/
 ## 快速开始
 
 ```bash
-# 1. 安装依赖（建议 Python 3.11+，本项目在 3.14 上验证通过）
-python -m venv .venv && source .venv/bin/activate
+# 一键启动：自动创建 .venv、安装依赖、检测浏览器
+./run.sh
+
+# 常用参数
+./run.sh --port 8080     # 指定端口
+./run.sh --host 0.0.0.0  # 允许局域网访问
+./run.sh --reload        # 开发模式（自动重载）
+./run.sh --check         # 只检查环境，不启动
+```
+
+`run.sh` 会依次完成：Python 版本检查 → 创建/复用 `.venv` → 按 `requirements.txt` 安装依赖（有变更才重装）→
+检测 Playwright 浏览器与本地 Chrome → 启动服务。首次使用如需手动执行：
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# 2. 安装 Playwright 浏览器（首次运行需要）
 playwright install chromium
-
-# 3. 启动
 python run.py
-# 或：uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 打开 <http://127.0.0.1:8000> 即可使用。
