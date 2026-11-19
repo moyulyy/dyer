@@ -88,7 +88,7 @@ const VIEW_META = {
   jobs: ["采集任务", "配置抖音采集任务，实时查看运行日志"],
   data: ["数据浏览", "检索已采集的作品与评论，支持导出 CSV / JSON"],
   overview: ["数据概览", "采集规模、关键词分布与高赞作品一览"],
-  users: ["用户数据", "以账号为单位的数据资产：资料、画像、互动关系与原始记录"],
+  users: ["用户列表", "以账号为单位的数据资产：资料、画像与互动关系"],
   network: ["用户网络", "社交拓扑的聚合特征：关键节点、社区结构与用户类型分布"],
   map: ["用户地图", "按 IP 属地归纳账号分布，区分男女与未知性别"],
 };
@@ -851,7 +851,7 @@ function renderUsers(items) {
 }
 
 async function loadUserData() {
-  await Promise.all([loadUsers(1), loadRaw()]);
+  await loadUsers(1);
 }
 
 function renderRoleBars(data) {
@@ -960,39 +960,6 @@ async function openUserDrawer(secUid) {
     $("#drawer-body").querySelectorAll(".relation-row[data-sec]").forEach((row) => {
       row.addEventListener("click", () => openUserDrawer(row.dataset.sec));
     });
-  } catch (err) {
-    toast(err.message, true);
-  }
-}
-
-/* ---------------------------------------------------------------- 原始数据 */
-async function loadRaw() {
-  try {
-    const data = await api("/api/raw?page_size=8");
-    $("#raw-meta").textContent = `共 ${data.total} 条原始响应`;
-    if (!data.items.length) {
-      $("#raw-list").innerHTML = '<div class="empty">暂无原始数据</div>';
-      return;
-    }
-    $("#raw-list").innerHTML = data.items
-      .map((item) => {
-        let pretty = item.payload;
-        try {
-          pretty = JSON.stringify(JSON.parse(item.payload), null, 2);
-        } catch (_) {
-          /* 保持原文 */
-        }
-        return `
-        <details class="raw-item">
-          <summary>
-            <span class="badge">${escapeHtml(item.kind)}</span>
-            <span class="mono small">${escapeHtml(item.external_id || "-")}</span>
-            <span class="muted small">${fmtTime(item.fetched_at)} · 深度 ${item.depth} · ${escapeHtml(item.source)}</span>
-          </summary>
-          <pre>${escapeHtml(pretty)}</pre>
-        </details>`;
-      })
-      .join("");
   } catch (err) {
     toast(err.message, true);
   }
