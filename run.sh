@@ -23,6 +23,28 @@ RELOAD="${DYER_RELOAD:-0}"
 INSTALL=1
 CHECK_ONLY=0
 
+port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH "sport = :$port" 2>/dev/null | grep -q . && return 0
+    return 1
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    return 1
+  fi
+  "$PY" - "$port" <<'PYPORT'
+import socket, sys
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+PYPORT
+}
+
 log()  { printf '\033[1;35m[dyer]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[dyer]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[dyer]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -107,8 +129,8 @@ if [[ "$CHECK_ONLY" == "1" ]]; then
   log "本地 Chrome       : ${CHROME:-未检测到（可放 chrome-extract/ 或设置 DYER_CHROME_PATH）}"
   log "数据目录          : $DATA_DIR"
   log "监听地址          : http://$HOST:$PORT"
-  if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q LISTEN; then
-    warn "端口 $PORT 已被占用"
+  if port_in_use "$PORT"; then
+    warn "端口 $PORT 已被占用（可改用 ./run.sh --port 8001）"
   fi
   exit 0
 fi
@@ -144,6 +166,14 @@ if [[ "$HAS_BROWSER" == "0" && -z "$CHROME" ]]; then
 fi
 
 # ---------------------------------------------------------------- 启动
+if port_in_use "$PORT"; then
+  warn "端口 $PORT 已被占用："
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnpH "sport = :$PORT" 2>/dev/null | head -2 | sed 's/^/      /' || true
+  fi
+  die "请先停止占用该端口的进程（例如 pkill -f run.py），或改用：./run.sh --port 8001"
+fi
+
 log "Python            : $("$PY" -V 2>&1)"
 log "本地 Chrome       : ${CHROME:-未检测到（将使用 Playwright 内置 Chromium）}"
 log "数据目录          : $DATA_DIR"
