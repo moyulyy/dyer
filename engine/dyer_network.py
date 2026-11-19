@@ -441,6 +441,8 @@ def _browser_attempts() -> List[Tuple[str, bool, Optional[str], Optional[str], s
     attempts: List[Tuple[str, bool, Optional[str], Optional[str], str]] = []
     if preferred == "cdp":
         attempts.append(("cdp", config.HEADLESS, None, None, "连接本地 Chrome（CDP）"))
+        # CDP 连接失败时回退到普通启动，避免任务直接失败
+        attempts.append(("playwright", config.HEADLESS, None, local_chrome or None, "本地 Chrome"))
     if preferred in ("auto", "bundled") and local_chrome:
         attempts.append(("playwright", config.HEADLESS, None, local_chrome, "本地 Chrome"))
     if preferred == "chrome":
@@ -467,6 +469,9 @@ async def open_douyin_session(crawler: DouYinCrawler, playwright) -> DouYinClien
         try:
             if mode == "cdp":
                 config.ENABLE_CDP_MODE = True
+                # 连接用户已经打开的 Chrome（默认 9222），复用其登录态
+                config.CDP_CONNECT_EXISTING = True
+                config.CDP_DEBUG_PORT = int(getattr(config, "DYER_CDP_PORT", 9222) or 9222)
                 if local_chrome:
                     config.CUSTOM_BROWSER_PATH = local_chrome
                 browser_context = await crawler.launch_browser_with_cdp(

@@ -161,15 +161,27 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
         return await self.request(method="POST", url=f"{self._host}{uri}", data=data, headers=headers)
 
     async def pong(self, browser_context: BrowserContext) -> bool:
-        local_storage = await self.playwright_page.evaluate("() => window.localStorage")
-        if local_storage.get("HasUserLogin", "") == "1":
-            return True
+        try:
+            local_storage = await self.playwright_page.evaluate("() => window.localStorage")
+            if local_storage.get("HasUserLogin", "") == "1":
+                return True
+        except Exception:
+            pass
 
         _, cookie_dict = await utils.convert_browser_context_cookies(
             browser_context,
             urls=self.cookie_urls,
         )
-        return cookie_dict.get("LOGIN_STATUS") == "1"
+        if cookie_dict.get("LOGIN_STATUS") == "1":
+            return True
+        # dyer 改动：新版抖音 Web 不再稳定写入 LOGIN_STATUS，
+        # 用登录后必然存在的会话 cookie 兜底，避免已登录仍被判为未登录。
+        return bool(
+            cookie_dict.get("sessionid")
+            or cookie_dict.get("sessionid_ss")
+            or cookie_dict.get("sid_tt")
+            or cookie_dict.get("uid_tt")
+        )
 
     async def update_cookies(self, browser_context: BrowserContext, urls: Optional[list[str]] = None):
         cookie_str, cookie_dict = await utils.convert_browser_context_cookies(

@@ -20,6 +20,7 @@
 
 import asyncio
 import functools
+import os
 import sys
 from typing import Optional
 
@@ -106,20 +107,63 @@ class DouYinLogin(AbstractLogin):
         if cookie_dict.get("LOGIN_STATUS") == "1":
             return True
 
+        # dyer 改动：与 DouYinClient.pong 保持一致，用会话 cookie 兜底
+        if any(cookie_dict.get(k) for k in ("sessionid", "sessionid_ss", "sid_tt", "uid_tt")):
+            return True
+
         return False
+
+    async def _save_debug_screenshot(self, name: str = "login-debug.png") -> str:
+        """把当前页面截图保存到任务目录，便于排查登录失败。"""
+        try:
+            base = os.path.dirname(config.QRCODE_SAVE_PATH) if config.QRCODE_SAVE_PATH else os.getcwd()
+            os.makedirs(base, exist_ok=True)
+            path = os.path.join(base, name)
+            await self.context_page.screenshot(path=path, full_page=True)
+            utils.logger.info(f"[DouYinLogin] 已保存页面截图: {path}")
+            return path
+        except Exception as exc:
+            utils.logger.error(f"[DouYinLogin] 保存页面截图失败: {exc}")
+            return ""
 
     async def popup_login_dialog(self):
         """If the login dialog box does not pop up automatically, we will manually click the login button"""
-        dialog_selector = "xpath=//div[@id='login-panel-new']"
-        try:
-            # check dialog box is auto popup and wait for 10 seconds
-            await self.context_page.wait_for_selector(dialog_selector, timeout=1000 * 10)
-        except Exception as e:
-            utils.logger.error(f"[DouYinLogin.popup_login_dialog] login dialog box does not pop up automatically, error: {e}")
-            utils.logger.info("[DouYinLogin.popup_login_dialog] login dialog box does not pop up automatically, we will manually click the login button")
-            login_button_ele = self.context_page.locator("xpath=//p[text() = '登录']")
-            await login_button_ele.click()
-            await asyncio.sleep(0.5)
+        dialog_selectors = [
+            "xpath=//div[@id='login-panel-new']",
+            "xpath=//div[@id='login-panel']",
+            "xpath=//div[contains(@class, 'login-panel')]",
+            "xpath=//div[contains(@class, 'login-mask')]",
+        ]
+        for selector in dialog_selectors:
+            try:
+                await self.context_page.wait_for_selector(selector, timeout=3000)
+                utils.logger.info(f"[DouYinLogin.popup_login_dialog] login dialog found: {selector}")
+                return
+            except Exception:
+                continue
+
+        utils.logger.warning("[DouYinLogin.popup_login_dialog] 登录框未自动弹出，尝试手动点击登录按钮")
+        button_selectors = [
+            "xpath=//p[text()='登录']",
+            "xpath=//span[text()='登录']",
+            "xpath=//button[contains(.,'登录')]",
+            "xpath=//div[contains(@class,'login')]//*[text()='登录']",
+        ]
+        for selector in button_selectors:
+            try:
+                locator = self.context_page.locator(selector).first
+                if await locator.count() and await locator.is_visible():
+                    await locator.click(timeout=3000)
+                    utils.logger.info(f"[DouYinLogin.popup_login_dialog] clicked login button: {selector}")
+                    await asyncio.sleep(1)
+                    return
+            except Exception:
+                continue
+
+        await self._save_debug_screenshot("login-failed.png")
+        raise RuntimeError(
+            "无法弹出抖音登录框：请改用 Cookie 登录，或使用已登录的本地 Chrome（CDP 模式）"
+        )
 
     async def login_by_qrcode(self):
         utils.logger.info("[DouYinLogin.login_by_qrcode] Begin login douyin by qrcode...")
@@ -129,8 +173,11 @@ class DouYinLogin(AbstractLogin):
             selector=qrcode_img_selector
         )
         if not base64_qrcode_img:
-            utils.logger.info("[DouYinLogin.login_by_qrcode] login qrcode not found please confirm ...")
-            sys.exit()
+            utils.logger.error("[DouYinLogin.login_by_qrcode] login qrcode not found please confirm ...")
+            await self._save_debug_screenshot("login-qrcode-missing.png")
+            raise RuntimeError(
+                "未找到登录二维码：可能是无头环境被风控，请改用 Cookie 登录或 CDP 模式"
+            )
 
         partial_show_qrcode = functools.partial(utils.show_qrcode, base64_qrcode_img)
         asyncio.get_running_loop().run_in_executor(executor=None, func=partial_show_qrcode)

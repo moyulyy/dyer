@@ -110,6 +110,8 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
     # auto | chrome | chromium；chrome 需要系统安装 Google Chrome，失败会自动回退
     config.BROWSER_CHANNEL = str(job.get("browser_channel", "auto") or "auto")
     config.BROWSER_EXECUTABLE = str(job.get("browser_executable") or detect_chrome_executable())
+    # CDP 连接端口（默认 9222），可通过环境变量覆盖
+    config.DYER_CDP_PORT = int(os.environ.get("DYER_CDP_PORT", "9222") or 9222)
     if config.BROWSER_EXECUTABLE:
         # CDP 模式会读取该配置启动本地浏览器
         config.CUSTOM_BROWSER_PATH = config.BROWSER_EXECUTABLE
