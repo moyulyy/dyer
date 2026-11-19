@@ -803,6 +803,12 @@ async function loadUsers(page) {
   }
 }
 
+function genderBadge(gender) {
+  const key = gender === 1 ? "male" : gender === 2 ? "female" : "unknown";
+  const label = gender === 1 ? "男" : gender === 2 ? "女" : "未知";
+  return `<span class="gender-badge gender-${key}">${label}</span>`;
+}
+
 function renderUsers(items) {
   const body = $("#users-body");
   if (!items.length) {
@@ -813,7 +819,6 @@ function renderUsers(items) {
         const avatar = user.avatar_url
           ? `<img class="avatar-sm" src="${escapeHtml(user.avatar_url)}" alt="" onerror="this.style.visibility='hidden'" />`
           : `<div class="avatar-sm">${escapeHtml((user.nickname || "?").slice(0, 1))}</div>`;
-        const gender = user.gender === 1 ? "男" : user.gender === 2 ? "女" : "未知";
         const roleColor = ROLE_COLORS[user.role] || "#8a8f9c";
         const role = user.role_label || "未分类";
         return `
@@ -829,7 +834,7 @@ function renderUsers(items) {
           <td class="num">${fmtNum(user.aweme_count)}</td>
           <td class="num">${fmtNum(user.total_favorited)}</td>
           <td>${escapeHtml(user.ip_location || "-")}</td>
-          <td>${gender}</td>
+          <td>${genderBadge(user.gender)}</td>
           <td class="num">${user.depth}</td>
           <td><span class="role-badge" style="background:${roleColor}1f;color:${roleColor}">${escapeHtml(role)}</span></td>
           <td class="num">${Number(user.influence_score || 0).toFixed(1)}</td>
@@ -943,6 +948,7 @@ async function openUserDrawer(secUid) {
         ${metrics.map(([k, v]) => `<div><span>${k}</span><b>${escapeHtml(v)}</b></div>`).join("")}
         <div><span>发现层级</span><b>${user.depth}</b></div>
         <div><span>来源</span><b>${escapeHtml(user.source)}</b></div>
+        <div><span>性别</span><b>${genderBadge(user.gender)}</b></div>
         <div><span>IP 属地</span><b>${escapeHtml(user.ip_location || "-")}</b></div>
         <div><span>资料完整</span><b>${user.profile_complete ? "是" : "否"}</b></div>
       </div>
