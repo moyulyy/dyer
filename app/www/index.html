@@ -145,28 +145,38 @@
             <label class="switch"><input type="checkbox" id="enable-comments" checked /><span>采集评论</span></label>
             <label class="switch"><input type="checkbox" id="enable-sub-comments" /><span>采集二级评论</span></label>
             <label class="switch"><input type="checkbox" id="enable-media" /><span>下载视频/图片</span></label>
-            <label class="switch"><input type="checkbox" id="headless" /><span>无头模式</span></label>
+            <label class="switch"><input type="checkbox" id="headless" checked /><span>无头模式（不显示浏览器窗口）</span></label>
           </div>
 
           <div class="login-row">
             <div class="field">
               <label for="login-type">登录方式</label>
               <select id="login-type">
-                <option value="qrcode">扫码登录（需要可见浏览器窗口）</option>
+                <option value="qrcode">扫码登录（二维码在页面弹窗展示）</option>
                 <option value="cookie">Cookie 登录</option>
               </select>
             </div>
-            <div class="field cookie-field hidden" id="cookie-field">
-              <label for="cookie">Cookie<em>建议先在设置中保存，任务将自动复用</em></label>
-              <div class="input-inline">
-                <input id="cookie" type="password" placeholder="从浏览器复制 douyin.com 的 Cookie" autocomplete="off" />
-                <button type="button" class="btn btn-ghost" id="btn-save-cookie">保存 Cookie</button>
-              </div>
+            <div class="field">
+              <label for="browser-channel">浏览器<em>系统 Chrome 需已安装</em></label>
+              <select id="browser-channel">
+                <option value="auto">自动（优先内置 Chromium）</option>
+                <option value="chrome">系统 Chrome</option>
+                <option value="chromium">内置 Chromium</option>
+                <option value="cdp">连接本地 Chrome（CDP）</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field cookie-field hidden" id="cookie-field">
+            <label for="cookie">Cookie<em>建议先在设置中保存，任务将自动复用</em></label>
+            <div class="input-inline">
+              <input id="cookie" type="password" placeholder="从浏览器复制 douyin.com 的 Cookie" autocomplete="off" />
+              <button type="button" class="btn btn-ghost" id="btn-save-cookie">保存 Cookie</button>
             </div>
           </div>
 
           <div class="form-actions">
-            <span class="muted small" id="form-hint">扫码登录会启动可见浏览器，扫码完成后自动开始采集</span>
+            <span class="muted small" id="form-hint">扫码登录默认无头运行，二维码会在页面弹窗中展示</span>
             <button type="submit" class="btn btn-primary" id="btn-start">
               <svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>
               开始采集
@@ -484,6 +494,21 @@
     <div class="modal-foot">
       <button class="btn btn-ghost" id="btn-clear-cookie">清空</button>
       <button class="btn btn-primary" id="btn-save-settings">保存</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== 扫码登录弹窗 ===================== -->
+<div id="qr-mask" class="modal-mask hidden">
+  <div class="modal qr-modal">
+    <div class="modal-head">
+      <h3>扫码登录抖音 <span class="muted small mono" id="qr-job"></span></h3>
+      <button class="icon-btn" id="qr-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body qr-modal-body">
+      <img id="qr-image" alt="抖音登录二维码" />
+      <p class="muted small" id="qr-hint">正在等待二维码生成…</p>
     </div>
   </div>
 </div>

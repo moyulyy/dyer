@@ -340,8 +340,20 @@ class DouYinCrawler(AbstractCrawler):
         playwright_proxy: Optional[Dict],
         user_agent: Optional[str],
         headless: bool = True,
+        channel: Optional[str] = None,
+        args: Optional[List[str]] = None,
     ) -> BrowserContext:
-        """Launch browser and create browser context"""
+        """Launch browser and create browser context
+
+        dyer 改动：新增 channel/args。
+        - channel="chrome"：使用系统安装的 Google Chrome（Playwright channel）。
+        - args：附加启动参数（例如容器环境下的 --no-sandbox）。
+        """
+        extra: Dict[str, Any] = {}
+        if channel:
+            extra["channel"] = channel
+        if args:
+            extra["args"] = args
         if config.SAVE_LOGIN_STATE:
             user_data_dir = os.path.join(os.getcwd(), "browser_data", config.USER_DATA_DIR % config.PLATFORM)  # type: ignore
             browser_context = await chromium.launch_persistent_context(
@@ -354,10 +366,11 @@ class DouYinCrawler(AbstractCrawler):
                     "height": 1080
                 },
                 user_agent=user_agent,
+                **extra,
             )  # type: ignore
             return browser_context
         else:
-            browser = await chromium.launch(headless=headless, proxy=playwright_proxy)  # type: ignore
+            browser = await chromium.launch(headless=headless, proxy=playwright_proxy, **extra)  # type: ignore
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
             return browser_context
 

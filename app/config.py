@@ -49,7 +49,7 @@ DEFAULT_JOB_OPTIONS = {
     "enable_sub_comments": False,
     "enable_media": False,
     "login_type": "qrcode",
-    "headless": False,
+    "headless": True,
     "sleep_sec": 2.0,
 }
 

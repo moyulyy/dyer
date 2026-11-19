@@ -24,3 +24,7 @@ venv/
 
 # Reasonix 会话元数据
 .reasonix/
+
+# 本地安装包与解压产物（不应提交）
+*.deb
+chrome-extract/

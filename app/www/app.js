@@ -190,6 +190,7 @@ async function submitJob(event) {
     enable_media: $("#enable-media").checked,
     headless: $("#headless").checked,
     login_type: $("#login-type").value,
+    browser_channel: $("#browser-channel").value,
     cookie: $("#cookie").value.trim(),
   };
 
@@ -225,13 +226,85 @@ async function saveCookie() {
 function syncLoginFields() {
   const isCookie = $("#login-type").value === "cookie";
   $("#cookie-field").classList.toggle("hidden", !isCookie);
-  $("#headless").closest(".switch").classList.toggle("hidden", !isCookie);
   $("#form-hint").textContent =
     state.crawlerType === "network"
       ? "扩散采集会按层级展开用户与评论关系，请合理设置用户上限与请求间隔"
       : isCookie
         ? "Cookie 登录不会弹出浏览器，适合服务器部署；Cookie 失效时请重新获取"
-        : "扫码登录会启动可见浏览器，请在日志抽屉中扫码完成登录";
+        : "扫码登录默认无头运行，二维码会以弹窗展示；需要可见窗口时取消勾选「无头模式」";
+}
+
+
+/* ------------------------------------------------------------------ 扫码弹窗 */
+const qrState = { jobId: null, timer: null, autoShown: new Set() };
+const jobStatusMap = new Map();
+
+function notifyStatusChanges(jobs) {
+  for (const job of jobs) {
+    const prev = jobStatusMap.get(job.id);
+    if (prev && prev !== job.status) {
+      if (job.status === "failed") {
+        toast(`任务 ${job.id} 失败：${job.error || "请查看日志"}`, true);
+      } else if (job.status === "success") {
+        toast(`任务 ${job.id} 已完成`);
+      }
+    }
+    jobStatusMap.set(job.id, job.status);
+  }
+}
+
+function maybeShowQr(jobs) {
+  if (!$("#qr-mask").classList.contains("hidden")) return;
+  const job = (jobs || []).find(
+    (item) =>
+      item.status === "running" &&
+      item.params &&
+      item.params.login_type === "qrcode" &&
+      item.has_qrcode
+  );
+  if (!job || qrState.autoShown.has(job.id)) return;
+  qrState.autoShown.add(job.id);
+  openQrModal(job.id);
+}
+
+function openQrModal(jobId) {
+  qrState.jobId = jobId;
+  $("#qr-job").textContent = `#${jobId}`;
+  $("#qr-mask").classList.remove("hidden");
+  refreshQrImage(jobId);
+  clearInterval(qrState.timer);
+  qrState.timer = setInterval(async () => {
+    if (qrState.jobId !== jobId) return;
+    refreshQrImage(jobId);
+    try {
+      const job = await api(`/api/jobs/${jobId}`);
+      if (job.status !== "running" && job.status !== "queued") {
+        closeQrModal();
+      }
+    } catch (_) {
+      /* 忽略瞬时错误 */
+    }
+  }, 2000);
+}
+
+function refreshQrImage(jobId) {
+  const img = $("#qr-image");
+  img.onload = () => {
+    img.classList.remove("hidden");
+    $("#qr-hint").textContent = "请使用抖音 App 扫码，登录成功后弹窗会自动关闭";
+  };
+  img.onerror = () => {
+    img.classList.add("hidden");
+    $("#qr-hint").textContent = "正在等待二维码生成…";
+  };
+  img.src = `/api/jobs/${jobId}/qrcode?t=${Date.now()}`;
+}
+
+function closeQrModal() {
+  clearInterval(qrState.timer);
+  qrState.timer = null;
+  qrState.jobId = null;
+  $("#qr-mask").classList.add("hidden");
 }
 
 /* ------------------------------------------------------------------ 任务列表 */
@@ -240,6 +313,8 @@ async function loadJobs() {
     const data = await api("/api/jobs?limit=100");
     state.jobs = data.items;
     renderJobs();
+    notifyStatusChanges(state.jobs);
+    maybeShowQr(state.jobs);
   } catch (err) {
     console.error(err);
   }
@@ -1303,6 +1378,11 @@ function bindEvents() {
     const row = event.target.closest("[data-sec]");
     if (row) openUserDrawer(row.dataset.sec);
   });
+  $("#qr-close").addEventListener("click", closeQrModal);
+  $("#qr-mask").addEventListener("click", (event) => {
+    if (event.target === $("#qr-mask")) closeQrModal();
+  });
+
   $("#btn-settings").addEventListener("click", openSettings);
   $("#modal-close").addEventListener("click", () => $("#modal-mask").classList.add("hidden"));
   $("#modal-mask").addEventListener("click", (event) => {
@@ -1314,6 +1394,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeDrawer();
+      closeQrModal();
       $("#modal-mask").classList.add("hidden");
     }
   });

@@ -129,6 +129,7 @@ class JobManager:
             "login_type": payload.login_type,
             "cookie": payload.cookie,
             "headless": payload.headless,
+            "browser_channel": payload.browser_channel,
             "sleep_sec": payload.sleep_sec,
             "expand_depth": payload.expand_depth,
             "max_users": payload.max_users,
@@ -189,7 +190,8 @@ class JobManager:
             enable_media=spec.get("enable_media", False),
             login_type=spec.get("login_type", "qrcode"),
             cookie=spec.get("cookie", ""),
-            headless=spec.get("headless", False),
+            headless=spec.get("headless", True),
+            browser_channel=spec.get("browser_channel", "auto"),
             sleep_sec=spec.get("sleep_sec", 2.0),
             expand_depth=spec.get("expand_depth", 2),
             max_users=spec.get("max_users", 50),
@@ -294,15 +296,18 @@ class JobManager:
                     ),
                     level="success",
                 )
-                try:
-                    from app.social.graph import analyze_network
+                if imported.get("users") or imported.get("relations"):
+                    try:
+                        from app.social.graph import analyze_network
 
-                    run_id = await analyze_network(job_id=job_id)
-                    self._append_log(
-                        job_id, f"[dyer] 社交网络分析完成（分析批次 #{run_id}）", level="success"
-                    )
-                except Exception as exc:
-                    self._append_log(job_id, f"[dyer] 社交网络分析失败: {exc}", level="warning")
+                        run_id = await analyze_network(job_id=job_id)
+                        self._append_log(
+                            job_id, f"[dyer] 社交网络分析完成（分析批次 #{run_id}）", level="success"
+                        )
+                    except Exception as exc:
+                        self._append_log(job_id, f"[dyer] 社交网络分析失败: {exc}", level="warning")
+                else:
+                    self._append_log(job_id, "[dyer] 未采集到数据，跳过社交网络分析", level="warning")
             else:
                 imported = await import_job_data(job_id, Path(data_dir) / "data")
                 if imported["videos"]:

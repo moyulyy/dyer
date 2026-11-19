@@ -23,7 +23,9 @@ class JobCreate(BaseModel):
     enable_media: bool = False
     login_type: Literal["qrcode", "cookie"] = "qrcode"
     cookie: str = ""
-    headless: bool = False
+    # 默认无头：二维码通过网页弹窗展示，服务器/容器环境也能扫码
+    headless: bool = True
+    browser_channel: Literal["auto", "chrome", "chromium", "cdp"] = "auto"
     sleep_sec: float = Field(default=2.0, ge=0, le=60)
 
     # ---- 社交网络扩散采集（crawler_type=network）----
@@ -44,9 +46,6 @@ class JobCreate(BaseModel):
             raise ValueError("作品采集至少需要一个作品链接或 ID")
         if self.crawler_type == "creator" and not self.creator_ids:
             raise ValueError("创作者采集至少需要一个创作者链接")
-        if self.login_type == "qrcode":
-            # 二维码登录必须看到浏览器窗口才能扫码
-            self.headless = False
         if self.crawler_type != "search":
             self.keywords = self.keywords or []
         return self

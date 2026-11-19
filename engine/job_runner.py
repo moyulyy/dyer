@@ -84,7 +84,9 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
     )
     config.ENABLE_GET_MEDIA = bool(job.get("enable_media", False))
 
-    config.HEADLESS = bool(job.get("headless", False))
+    config.HEADLESS = bool(job.get("headless", True))
+    # auto | chrome | chromium；chrome 需要系统安装 Google Chrome，失败会自动回退
+    config.BROWSER_CHANNEL = str(job.get("browser_channel", "auto") or "auto")
     config.ENABLE_CDP_MODE = bool(job.get("enable_cdp", False))
     config.CDP_HEADLESS = config.HEADLESS
     config.SAVE_LOGIN_STATE = bool(job.get("save_login_state", True))
@@ -115,6 +117,7 @@ def apply_job_config(job: Dict[str, Any]) -> Dict[str, Any]:
         "include_following": bool(job.get("include_following", False)),
         "enable_media": config.ENABLE_GET_MEDIA,
         "headless": config.HEADLESS,
+        "browser_channel": getattr(config, "BROWSER_CHANNEL", "auto"),
         "enable_cdp": config.ENABLE_CDP_MODE,
         "save_option": config.SAVE_DATA_OPTION,
         "data_dir": config.SAVE_DATA_PATH,

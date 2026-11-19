@@ -154,7 +154,7 @@ input:focus, select:focus, textarea:focus {
 .switch input:checked { background: var(--brand); }
 .switch input:checked::after { transform: translateX(15px); }
 
-.login-row { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.login-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .input-inline { display: flex; gap: 10px; }
 .input-inline input { flex: 1; }
 
@@ -504,3 +504,18 @@ input:focus, select:focus, textarea:focus {
 .gender-male { background: #e6efff; color: #1d4ed8; }
 .gender-female { background: #ffe6ef; color: #d61f69; }
 .gender-unknown { background: #eef0f4; color: #7d828f; }
+
+/* ---------------------------------------------------------------- 扫码弹窗 */
+.qr-modal { width: min(420px, 92vw); text-align: center; }
+.qr-modal-body { padding: 24px 20px 26px; }
+#qr-image {
+  width: 260px;
+  height: 260px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  display: inline-block;
+}
+#qr-image.hidden { display: none; }
+.qr-modal .small { margin-top: 14px; line-height: 1.7; }

@@ -425,15 +425,67 @@ class NetworkExplorer:
 
 
 # --------------------------------------------------------------------------- 会话
+def _browser_attempts() -> List[Tuple[str, bool, Optional[str], str]]:
+    """按优先级生成启动尝试：(模式, 是否无头, channel, 说明)。
+
+    - cdp：连接用户本地的 Chrome（需以 `--remote-debugging-port` 启动），
+      使用真实浏览器环境，最适合扫码登录；
+    - chrome：Playwright 的 channel，使用系统安装的 Google Chrome；
+    - chromium：Playwright 自带浏览器。
+
+    服务器/容器环境常常没有可用的显示服务（例如 X11 socket 不可见），
+    有头浏览器会直接崩溃；此时自动降级为无头，二维码仍可在网页弹窗里扫码。
+    """
+    preferred = str(getattr(config, "BROWSER_CHANNEL", "auto") or "auto")
+    attempts: List[Tuple[str, bool, Optional[str], str]] = []
+    if preferred == "cdp":
+        attempts.append(("cdp", config.HEADLESS, None, "连接本地 Chrome（CDP）"))
+    if preferred == "chrome":
+        attempts.append(("playwright", config.HEADLESS, "chrome", "系统 Chrome"))
+    attempts.append(("playwright", config.HEADLESS, None, "内置 Chromium"))
+    if not config.HEADLESS:
+        attempts.append(("playwright", True, None, "内置 Chromium（无头降级）"))
+    return attempts
+
+
 async def open_douyin_session(crawler: DouYinCrawler, playwright) -> DouYinClient:
     """启动浏览器、打开抖音、必要时登录，返回可用的客户端。"""
     if config.ENABLE_CDP_MODE:
         log("扩散采集不支持 CDP 模式，已回退到标准 Playwright 模式")
         config.ENABLE_CDP_MODE = False
 
-    browser_context = await crawler.launch_browser(
-        playwright.chromium, None, None, headless=config.HEADLESS
-    )
+    browser_context = None
+    last_error: Optional[Exception] = None
+    for mode, headless, channel, label in _browser_attempts():
+        try:
+            if mode == "cdp":
+                config.ENABLE_CDP_MODE = True
+                browser_context = await crawler.launch_browser_with_cdp(
+                    playwright, None, None, headless=headless
+                )
+            else:
+                browser_context = await crawler.launch_browser(
+                    playwright.chromium,
+                    None,
+                    None,
+                    headless=headless,
+                    channel=channel,
+                )
+            if headless != config.HEADLESS:
+                config.HEADLESS = True
+                log("有头浏览器启动失败，已自动切换为无头模式；二维码会在网页弹窗中展示")
+            log(f"浏览器已启动：{label}（headless={headless}）")
+            break
+        except Exception as exc:  # 记录后继续尝试下一种启动方式
+            last_error = exc
+            log(f"浏览器启动失败（{label}）：{str(exc).splitlines()[0]}")
+
+    if browser_context is None:
+        raise RuntimeError(
+            "浏览器启动失败：请确认已安装 Playwright 浏览器（playwright install chromium）；"
+            "若在服务器/容器环境，请改用「连接本地 Chrome（CDP）」或 Cookie 登录"
+        ) from last_error
+
     crawler.browser_context = browser_context
     await browser_context.add_init_script(
         path=str(Path(__file__).resolve().parent / "libs" / "stealth.min.js")
@@ -471,7 +523,9 @@ async def run_network(job: Dict[str, Any], playwright) -> Dict[str, Any]:
     finally:
         sink.close()
         try:
-            if crawler.browser_context:
+            if crawler.cdp_manager:
+                await crawler.cdp_manager.cleanup(force=True)
+            elif crawler.browser_context:
                 await crawler.browser_context.close()
         except Exception:
             pass
