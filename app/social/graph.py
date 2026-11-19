@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import json
+import math
 import time
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional
 
 import networkx as nx
@@ -33,6 +35,17 @@ REL_TYPE_WEIGHT = {
 BETWEENNESS_EXACT_LIMIT = 1500
 PAGERANK_ALPHA = 0.85
 
+# 用户角色画像：规则化分类，便于解释与筛选
+ROLE_LABELS = {
+    "hub": "核心影响者",
+    "bridge": "跨圈桥接者",
+    "community_leader": "社区核心",
+    "active_commenter": "活跃互动者",
+    "creator": "内容创作者",
+    "peripheral": "长尾账号",
+    "isolated": "孤立账号",
+}
+
 
 def build_graphs(
     users: Iterable[Dict[str, Any]], edges: Iterable[Dict[str, Any]]
@@ -47,6 +60,7 @@ def build_graphs(
             sec_uid,
             nickname=user.get("nickname") or "",
             follower_count=int(user.get("follower_count") or 0),
+            aweme_count=int(user.get("aweme_count") or 0),
             depth=int(user.get("depth") or 0),
             profile_complete=bool(user.get("profile_complete")),
         )
@@ -60,7 +74,14 @@ def build_graphs(
         weight = float(edge.get("weight") or 1) * REL_TYPE_WEIGHT.get(rel_type, 1.0)
         for node in (src, dst):
             if node not in digraph:
-                digraph.add_node(node, nickname="", follower_count=0, depth=0, profile_complete=False)
+                digraph.add_node(
+                    node,
+                    nickname="",
+                    follower_count=0,
+                    aweme_count=0,
+                    depth=0,
+                    profile_complete=False,
+                )
         if digraph.has_edge(src, dst):
             digraph[src][dst]["weight"] += weight
             digraph[src][dst]["types"].add(rel_type)
@@ -114,6 +135,114 @@ def _pagerank(
     return rank
 
 
+def _percentile_ranks(values: Dict[str, float]) -> Dict[str, float]:
+    """把任意指标转成 0~1 的百分位（相同值得到相同排名）。"""
+    items = sorted(values.items(), key=lambda pair: pair[1])
+    count = len(items)
+    if count <= 1:
+        return {node: 1.0 for node, _ in items}
+    ranks: Dict[str, float] = {}
+    i = 0
+    while i < count:
+        j = i
+        while j + 1 < count and items[j + 1][1] == items[i][1]:
+            j += 1
+        rank = ((i + j) / 2) / (count - 1)
+        for k in range(i, j + 1):
+            ranks[items[k][0]] = rank
+        i = j + 1
+    return ranks
+
+
+def classify_roles(
+    *,
+    nodes: Iterable[str],
+    undirected: nx.Graph,
+    degree: Dict[str, int],
+    in_degree: Dict[str, int],
+    out_degree: Dict[str, int],
+    pagerank: Dict[str, float],
+    betweenness: Dict[str, float],
+    community_of: Dict[str, int],
+    followers: Dict[str, int],
+    aweme_counts: Dict[str, int],
+) -> Dict[str, Dict[str, Any]]:
+    """基于图指标的用户角色分类。
+
+    规则优先级（自上而下，单标签）：
+    1. isolated        度为 0，没有任何互动
+    2. hub             入度 ≥ 3 且 PageRank 前 15% —— 被大量互动的核心影响者
+       （优先于 bridge：高入度 + 高 PageRank 的账号即使跨社区，也首先是影响力节点）
+    3. bridge          跨社区邻居占比 ≥ 50% 且介数前 30% —— 结构洞位置
+    4. community_leader 社区内 PageRank 最高且社区规模 ≥ 3
+    5. active_commenter 出度 ≥ 2 且主动多于被动 —— 高频评论/回复者
+    6. creator         有被评论或有作品 —— 内容供给方
+    7. peripheral      其余长尾账号
+
+    同时给出 0~100 的影响力综合分：PageRank 45% + 入度 20% + 介数 15% +
+    粉丝规模 10% + 出度 10%（各分项先取百分位，避免量纲差异）。
+    """
+    node_list = list(nodes)
+    pr_rank = _percentile_ranks({node: float(pagerank.get(node, 0.0)) for node in node_list})
+    bt_rank = _percentile_ranks({node: float(betweenness.get(node, 0.0)) for node in node_list})
+    in_rank = _percentile_ranks({node: float(in_degree.get(node, 0)) for node in node_list})
+    out_rank = _percentile_ranks({node: float(out_degree.get(node, 0)) for node in node_list})
+    follower_rank = _percentile_ranks(
+        {node: math.log1p(max(0, followers.get(node, 0))) for node in node_list}
+    )
+
+    community_size = Counter(community_of.get(node, -1) for node in node_list)
+    leaders: Dict[int, str] = {}
+    for node in node_list:
+        community = community_of.get(node, -1)
+        current = leaders.get(community)
+        if current is None or pagerank.get(node, 0.0) > pagerank.get(current, 0.0):
+            leaders[community] = node
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for node in node_list:
+        total_degree = int(degree.get(node, 0))
+        neighbors = list(undirected.neighbors(node)) if node in undirected else []
+        cross = sum(1 for nb in neighbors if community_of.get(nb) != community_of.get(node))
+        cross_ratio = round(cross / len(neighbors), 4) if neighbors else 0.0
+        influence = round(
+            100
+            * (
+                0.45 * pr_rank.get(node, 0.0)
+                + 0.20 * in_rank.get(node, 0.0)
+                + 0.15 * bt_rank.get(node, 0.0)
+                + 0.10 * follower_rank.get(node, 0.0)
+                + 0.10 * out_rank.get(node, 0.0)
+            ),
+            2,
+        )
+
+        if total_degree == 0:
+            role = "isolated"
+        elif pr_rank.get(node, 0.0) >= 0.85 and int(in_degree.get(node, 0)) >= 3:
+            role = "hub"
+        elif cross_ratio >= 0.5 and bt_rank.get(node, 0.0) >= 0.7 and total_degree >= 3:
+            role = "bridge"
+        elif (
+            leaders.get(community_of.get(node, -1)) == node
+            and community_size[community_of.get(node, -1)] >= 3
+        ):
+            role = "community_leader"
+        elif int(out_degree.get(node, 0)) >= 2 and int(out_degree.get(node, 0)) > int(in_degree.get(node, 0)):
+            role = "active_commenter"
+        elif int(in_degree.get(node, 0)) >= 1 or aweme_counts.get(node, 0) > 0:
+            role = "creator"
+        else:
+            role = "peripheral"
+
+        result[node] = {
+            "role": role,
+            "influence_score": influence,
+            "cross_community_ratio": cross_ratio,
+        }
+    return result
+
+
 def _label(graph: nx.Graph, node: str) -> str:
     nickname = graph.nodes[node].get("nickname") if node in graph else ""
     return nickname or node
@@ -134,6 +263,8 @@ def compute_metrics(
         "top_pagerank": [],
         "top_betweenness": [],
         "top_degree": [],
+        "top_influence": [],
+        "roles": [],
         "communities": [],
         "relation_types": {},
         "isolated_nodes": 0,
@@ -191,10 +322,28 @@ def compute_metrics(
     else:
         modularity = 0.0
 
+    role_info = classify_roles(
+        nodes=list(digraph.nodes),
+        undirected=undirected,
+        degree=degree,
+        in_degree=in_degree,
+        out_degree=out_degree,
+        pagerank=pagerank,
+        betweenness=betweenness,
+        community_of=community_of,
+        followers={
+            node: int(digraph.nodes[node].get("follower_count") or 0) for node in digraph.nodes
+        },
+        aweme_counts={
+            node: int(digraph.nodes[node].get("aweme_count") or 0) for node in digraph.nodes
+        },
+    )
+
     isolated = 0
     for node in digraph.nodes:
         if degree.get(node, 0) == 0:
             isolated += 1
+        info = role_info.get(node, {})
         metrics[node] = {
             "pagerank": float(pagerank.get(node, 0.0)),
             "degree_in": int(in_degree.get(node, 0)),
@@ -206,6 +355,9 @@ def compute_metrics(
             "nickname": _label(digraph, node),
             "follower_count": int(digraph.nodes[node].get("follower_count") or 0),
             "depth": int(digraph.nodes[node].get("depth") or 0),
+            "role": info.get("role", "peripheral"),
+            "influence_score": float(info.get("influence_score", 0.0)),
+            "cross_community_ratio": float(info.get("cross_community_ratio", 0.0)),
         }
 
     relation_types: Dict[str, int] = {}
@@ -231,6 +383,17 @@ def compute_metrics(
             "top_pagerank": top("pagerank"),
             "top_betweenness": top("betweenness"),
             "top_degree": top("degree_total"),
+            "top_influence": top("influence_score"),
+            "roles": [
+                {
+                    "role": role,
+                    "label": ROLE_LABELS.get(role, role),
+                    "count": count,
+                }
+                for role, count in Counter(
+                    data["role"] for data in metrics.values()
+                ).most_common()
+            ],
             "communities": [
                 {
                     "id": index,
@@ -277,6 +440,7 @@ async def analyze_network(job_id: str = "") -> int:
             "sec_uid": user.sec_uid,
             "nickname": user.nickname,
             "follower_count": user.follower_count,
+            "aweme_count": user.aweme_count,
             "depth": user.depth,
             "profile_complete": user.profile_complete,
         }
@@ -323,6 +487,9 @@ async def analyze_network(job_id: str = "") -> int:
                     betweenness=values["betweenness"],
                     community=values["community"],
                     component=values["component"],
+                    role=values["role"],
+                    influence_score=values["influence_score"],
+                    cross_community_ratio=values["cross_community_ratio"],
                     computed_at=computed_at,
                 )
             )

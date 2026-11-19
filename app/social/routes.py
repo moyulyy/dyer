@@ -18,12 +18,14 @@ from app.db import (
     UserRelation,
     Video,
 )
-from app.social.graph import analyze_network, latest_analysis
+from app.social.graph import ROLE_LABELS, analyze_network, latest_analysis
+from app.social.regions import aggregate_regions
 
 router = APIRouter(prefix="/api", tags=["network"])
 
 SORT_FIELDS = {
     "pagerank": UserMetric.pagerank,
+    "influence": UserMetric.influence_score,
     "degree": UserMetric.degree_total,
     "betweenness": UserMetric.betweenness,
     "followers": DyUser.follower_count,
@@ -52,7 +54,12 @@ def _user_row(user: DyUser, metric: Optional[UserMetric]) -> Dict[str, Any]:
         "profile_complete": user.profile_complete,
         "first_seen_ts": user.first_seen_ts,
         "last_seen_ts": user.last_seen_ts,
+        "gender": user.gender,
         "pagerank": round(metric.pagerank, 6) if metric else 0.0,
+        "role": (metric.role if metric else "") or "",
+        "role_label": ROLE_LABELS.get(metric.role, metric.role) if metric else "",
+        "influence_score": round(metric.influence_score, 2) if metric else 0.0,
+        "cross_community_ratio": round(metric.cross_community_ratio, 4) if metric else 0.0,
         "degree_in": metric.degree_in if metric else 0,
         "degree_out": metric.degree_out if metric else 0,
         "degree_total": metric.degree_total if metric else 0,
@@ -66,11 +73,13 @@ def _user_row(user: DyUser, metric: Optional[UserMetric]) -> Dict[str, Any]:
 async def list_users(
     q: str = "",
     sort: Literal[
-        "pagerank", "degree", "betweenness", "followers", "depth", "nickname"
+        "pagerank", "influence", "degree", "betweenness", "followers", "depth", "nickname"
     ] = "pagerank",
     order: Literal["asc", "desc"] = "desc",
     depth: Optional[int] = None,
     community: Optional[int] = None,
+    role: str = "",
+    gender: Optional[int] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 20,
 ) -> Dict[str, Any]:
@@ -89,6 +98,10 @@ async def list_users(
         base = base.where(DyUser.depth == depth)
     if community is not None:
         base = base.where(UserMetric.community == community)
+    if role:
+        base = base.where(UserMetric.role == role)
+    if gender is not None:
+        base = base.where(DyUser.gender == gender)
 
     async with SessionLocal() as session:
         total = int(
@@ -116,6 +129,10 @@ async def list_users(
             stmt = stmt.where(DyUser.depth == depth)
         if community is not None:
             stmt = stmt.where(UserMetric.community == community)
+        if role:
+            stmt = stmt.where(UserMetric.role == role)
+        if gender is not None:
+            stmt = stmt.where(DyUser.gender == gender)
         rows = (await session.execute(stmt)).all()
 
     return {
@@ -124,6 +141,42 @@ async def list_users(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.get("/users/roles")
+async def user_roles() -> Dict[str, Any]:
+    """用户角色分布（由社交网络分析给出）。"""
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(UserMetric.role, func.count(UserMetric.sec_uid)).group_by(UserMetric.role)
+            )
+        ).all()
+    total = sum(count for _, count in rows)
+    items = [
+        {
+            "role": role or "peripheral",
+            "label": ROLE_LABELS.get(role, role),
+            "count": count,
+            "ratio": round(count / total, 4) if total else 0,
+        }
+        for role, count in sorted(rows, key=lambda row: -row[1])
+    ]
+    return {"total": total, "items": items}
+
+
+@router.get("/users/map")
+async def user_map() -> Dict[str, Any]:
+    """按 IP 属地聚合用户数量，并区分性别。"""
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(DyUser.ip_location, DyUser.gender, func.count(DyUser.id)).group_by(
+                    DyUser.ip_location, DyUser.gender
+                )
+            )
+        ).all()
+    return aggregate_regions(rows)
 
 
 @router.get("/users/{sec_uid}")

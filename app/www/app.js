@@ -88,7 +88,9 @@ const VIEW_META = {
   jobs: ["采集任务", "配置抖音采集任务，实时查看运行日志"],
   data: ["数据浏览", "检索已采集的作品与评论，支持导出 CSV / JSON"],
   overview: ["数据概览", "采集规模、关键词分布与高赞作品一览"],
-  network: ["用户网络", "以账号为节点的社交拓扑：影响力、桥接位置与社区结构"],
+  users: ["用户数据", "以账号为单位的数据资产：资料、画像、互动关系与原始记录"],
+  network: ["用户网络", "社交拓扑的聚合特征：关键节点、社区结构与用户类型分布"],
+  map: ["用户地图", "按 IP 属地归纳账号分布，区分男女与未知性别"],
 };
 
 function switchView(view) {
@@ -100,7 +102,9 @@ function switchView(view) {
   $("#view-sub").textContent = VIEW_META[view][1];
   if (view === "data") loadVideos(1);
   if (view === "overview") loadStats();
+  if (view === "users") loadUserData();
   if (view === "network") loadNetwork();
+  if (view === "map") loadMap();
 }
 
 /* ------------------------------------------------------------------ 引擎信息 */
@@ -659,24 +663,39 @@ const COMMUNITY_COLORS = [
   "#db2777", "#7c3aed", "#0ea5e9", "#65a30d", "#f97316",
 ];
 
+const ROLE_COLORS = {
+  hub: "#fe2c55",
+  bridge: "#7c3aed",
+  community_leader: "#d97706",
+  active_commenter: "#0891b2",
+  creator: "#16a34a",
+  peripheral: "#8a8f9c",
+  isolated: "#c3c6cf",
+};
+
+const ROLE_DESCRIPTIONS = [
+  ["hub", "核心影响者", "入度高、PageRank 靠前，被大量账号互动"],
+  ["bridge", "跨圈桥接者", "跨社区邻居占比高、介数靠前，处在结构洞位置"],
+  ["community_leader", "社区核心", "所在社区内影响力最高的账号"],
+  ["active_commenter", "活跃互动者", "主动评论 / 回复明显多于被动互动"],
+  ["creator", "内容创作者", "有作品或被评论，构成内容供给"],
+  ["peripheral", "长尾账号", "互动较少，处于网络边缘"],
+  ["isolated", "孤立账号", "没有任何互动关系"],
+];
+
 const networkState = {
   users: { page: 1, pageSize: 20, total: 0 },
-  graph: { nodes: [], edges: [] },
   analysis: null,
-  layout: [],
-  hover: null,
 };
 
 async function loadNetwork() {
   try {
-    const [overview, graph] = await Promise.all([
+    const [overview, roles] = await Promise.all([
       api("/api/network/overview"),
-      api("/api/network/graph?limit=150"),
+      api("/api/users/roles"),
     ]);
     renderNetworkOverview(overview);
-    drawGraph(graph);
-    await loadUsers(1);
-    await loadRaw();
+    renderRoleBars(roles);
   } catch (err) {
     toast(err.message, true);
   }
@@ -690,10 +709,9 @@ function renderNetworkOverview(overview) {
   networkState.analysis = analysis;
   $("#net-communities").textContent = analysis ? analysis.community_count : "-";
   $("#net-modularity").textContent = analysis ? Number(analysis.modularity || 0).toFixed(3) : "-";
-  $("#graph-meta").textContent = analysis
-    ? `节点 ${analysis.node_count} · 边 ${analysis.edge_count} · 密度 ${Number(analysis.density).toFixed(3)} · 平均度 ${analysis.avg_degree}`
+  $("#community-meta").textContent = analysis
+    ? `共 ${analysis.community_count} 个社区 · 模块度 ${Number(analysis.modularity || 0).toFixed(3)}`
     : "";
-  $("#community-meta").textContent = analysis ? `共 ${analysis.community_count} 个社区` : "";
   renderKeyUsers();
   renderCommunities();
 }
@@ -706,9 +724,12 @@ function renderKeyUsers() {
     box.innerHTML = '<div class="empty">暂无分析结果，先运行扩散采集或点「重新分析」</div>';
     return;
   }
-  const field = { pagerank: "top_pagerank", betweenness: "top_betweenness", degree: "top_degree" }[
-    $("#key-metric").value
-  ];
+  const field = {
+    pagerank: "top_pagerank",
+    betweenness: "top_betweenness",
+    degree: "top_degree",
+    influence: "top_influence",
+  }[$("#key-metric").value];
   const list = (summary[field] || []).slice(0, 8);
   if (!list.length) {
     box.innerHTML = '<div class="empty">暂无数据</div>';
@@ -756,159 +777,6 @@ function renderCommunities() {
     .join("");
 }
 
-/* ---------------------------------------------------------------- 力导向图 */
-function computeLayout(nodes, edges, width, height) {
-  const cx = width / 2;
-  const cy = height / 2;
-  const radius = Math.min(width, height) * 0.34;
-  nodes.forEach((node, index) => {
-    const angle = (index / Math.max(nodes.length, 1)) * Math.PI * 2;
-    const ring = 0.55 + 0.45 * (((node.community || 0) % 3) / 3);
-    node.x = cx + Math.cos(angle) * radius * ring;
-    node.y = cy + Math.sin(angle) * radius * ring;
-    node.vx = 0;
-    node.vy = 0;
-  });
-
-  const byId = new Map(nodes.map((node) => [node.sec_uid, node]));
-  const pairs = edges
-    .map((edge) => [byId.get(edge.source), byId.get(edge.target)])
-    .filter(([a, b]) => a && b);
-  const k = Math.sqrt((width * height) / Math.max(nodes.length, 1)) * 0.55;
-
-  for (let iter = 0; iter < 180; iter += 1) {
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const a = nodes[i];
-        const b = nodes[j];
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
-        const force = ((k * k) / dist) * 0.02;
-        dx = (dx / dist) * force;
-        dy = (dy / dist) * force;
-        a.vx += dx;
-        a.vy += dy;
-        b.vx -= dx;
-        b.vy -= dy;
-      }
-    }
-    for (const [a, b] of pairs) {
-      let dx = b.x - a.x;
-      let dy = b.y - a.y;
-      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
-      const force = (dist - k * 1.1) * 0.012;
-      dx = (dx / dist) * force;
-      dy = (dy / dist) * force;
-      a.vx += dx;
-      a.vy += dy;
-      b.vx -= dx;
-      b.vy -= dy;
-    }
-    for (const node of nodes) {
-      node.vx += (cx - node.x) * 0.002;
-      node.vy += (cy - node.y) * 0.002;
-      node.vx *= 0.82;
-      node.vy *= 0.82;
-      node.x = Math.max(26, Math.min(width - 26, node.x + node.vx));
-      node.y = Math.max(26, Math.min(height - 26, node.y + node.vy));
-    }
-  }
-  const maxDegree = Math.max(...nodes.map((node) => node.degree || 0), 1);
-  nodes.forEach((node) => {
-    node.radius = 4 + Math.sqrt((node.degree || 0) / maxDegree) * 10;
-  });
-  return { nodes, pairs };
-}
-
-function drawGraph(data) {
-  networkState.graph = data;
-  const canvas = $("#network-canvas");
-  const empty = $("#graph-empty");
-  if (!data.nodes.length) {
-    canvas.classList.add("hidden");
-    empty.classList.remove("hidden");
-    $("#graph-legend").innerHTML = "";
-    return;
-  }
-  canvas.classList.remove("hidden");
-  empty.classList.add("hidden");
-
-  const width = canvas.clientWidth || 900;
-  const height = 460;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  const { nodes, pairs } = computeLayout(data.nodes.map((node) => ({ ...node })), data.edges, width, height);
-  networkState.layout = nodes;
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(22, 24, 35, 0.13)";
-  ctx.lineWidth = 1;
-  for (const [a, b] of pairs) {
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  for (const node of nodes) {
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-    ctx.fillStyle = COMMUNITY_COLORS[(node.community >= 0 ? node.community : 0) % COMMUNITY_COLORS.length];
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
-  }
-  const labelled = [...nodes].sort((a, b) => (b.degree || 0) - (a.degree || 0)).slice(0, 10);
-  ctx.fillStyle = "#4b4f5c";
-  ctx.font = '12px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.textAlign = "center";
-  for (const node of labelled) {
-    ctx.fillText((node.nickname || "").slice(0, 8), node.x, node.y - node.radius - 6);
-  }
-
-  const communities = [...new Set(nodes.map((node) => node.community))].filter((id) => id >= 0).sort((a, b) => a - b);
-  $("#graph-legend").innerHTML = communities
-    .slice(0, 10)
-    .map(
-      (id) =>
-        `<span class="legend-item"><i class="dot" style="background:${COMMUNITY_COLORS[id % COMMUNITY_COLORS.length]}"></i>社区 ${id + 1}</span>`
-    )
-    .join("");
-
-  canvas.onmousemove = (event) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    const hit = nodes.find((node) => Math.hypot(node.x - x, node.y - y) <= node.radius + 4);
-    const tip = $("#graph-tip");
-    if (!hit) {
-      canvas.style.cursor = "default";
-      tip.classList.add("hidden");
-      return;
-    }
-    networkState.hover = hit.sec_uid;
-    canvas.style.cursor = "pointer";
-    tip.classList.remove("hidden");
-    tip.style.left = `${Math.min(x + 14, width - 180)}px`;
-    tip.style.top = `${Math.max(y - 10, 8)}px`;
-    tip.innerHTML = `<strong>${escapeHtml(hit.nickname || hit.sec_uid.slice(0, 10))}</strong>
-      <div>粉丝 ${fmtNum(hit.follower_count)} · 连接 ${hit.degree} · 层级 ${hit.depth}</div>
-      <div>PageRank ${Number(hit.pagerank).toFixed(4)}</div>`;
-  };
-  canvas.onclick = (event) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    const hit = nodes.find((node) => Math.hypot(node.x - x, node.y - y) <= node.radius + 4);
-    if (hit) openUserDrawer(hit.sec_uid);
-  };
-}
-
 /* ---------------------------------------------------------------- 用户列表 */
 async function loadUsers(page) {
   const params = new URLSearchParams({
@@ -919,8 +787,12 @@ async function loadUsers(page) {
   });
   const q = $("#user-q").value.trim();
   const depth = $("#user-depth").value;
+  const role = $("#user-role").value;
+  const gender = $("#user-gender").value;
   if (q) params.set("q", q);
   if (depth !== "") params.set("depth", depth);
+  if (role) params.set("role", role);
+  if (gender !== "") params.set("gender", gender);
   try {
     const data = await api("/api/users?" + params.toString());
     networkState.users.page = data.page;
@@ -934,13 +806,16 @@ async function loadUsers(page) {
 function renderUsers(items) {
   const body = $("#users-body");
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty">没有匹配的用户，先运行一次「扩散采集」</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="12"><div class="empty">没有匹配的用户，先运行一次「扩散采集」</div></td></tr>';
   } else {
     body.innerHTML = items
       .map((user) => {
         const avatar = user.avatar_url
           ? `<img class="avatar-sm" src="${escapeHtml(user.avatar_url)}" alt="" onerror="this.style.visibility='hidden'" />`
           : `<div class="avatar-sm">${escapeHtml((user.nickname || "?").slice(0, 1))}</div>`;
+        const gender = user.gender === 1 ? "男" : user.gender === 2 ? "女" : "未知";
+        const roleColor = ROLE_COLORS[user.role] || "#8a8f9c";
+        const role = user.role_label || "未分类";
         return `
         <tr data-sec="${escapeHtml(user.sec_uid)}">
           <td>${avatar}</td>
@@ -951,13 +826,17 @@ function renderUsers(items) {
             <div class="video-sub mono">${escapeHtml(user.unique_id || user.sec_uid.slice(0, 18))}</div>
           </td>
           <td class="num">${fmtNum(user.follower_count)}</td>
+          <td class="num">${fmtNum(user.aweme_count)}</td>
+          <td class="num">${fmtNum(user.total_favorited)}</td>
+          <td>${escapeHtml(user.ip_location || "-")}</td>
+          <td>${gender}</td>
           <td class="num">${user.depth}</td>
-          <td class="num">${Number(user.pagerank).toFixed(4)}</td>
+          <td><span class="role-badge" style="background:${roleColor}1f;color:${roleColor}">${escapeHtml(role)}</span></td>
+          <td class="num">${Number(user.influence_score || 0).toFixed(1)}</td>
           <td class="num">${user.degree_total}</td>
-          <td class="num">${Number(user.betweenness).toFixed(3)}</td>
           <td>${
             user.community >= 0
-              ? `<span class="badge community-badge" style="background:${COMMUNITY_COLORS[user.community % COMMUNITY_COLORS.length]}22;color:${COMMUNITY_COLORS[user.community % COMMUNITY_COLORS.length]}">社区 ${user.community + 1}</span>`
+              ? `<span class="role-badge" style="background:${COMMUNITY_COLORS[user.community % COMMUNITY_COLORS.length]}1f;color:${COMMUNITY_COLORS[user.community % COMMUNITY_COLORS.length]}">社区 ${user.community + 1}</span>`
               : '<span class="muted small">-</span>'
           }</td>
         </tr>`;
@@ -969,6 +848,40 @@ function renderUsers(items) {
   $("#user-page-info").textContent = `${networkState.users.page} / ${totalPages}`;
   $("#btn-user-prev").disabled = networkState.users.page <= 1;
   $("#btn-user-next").disabled = networkState.users.page >= totalPages;
+}
+
+async function loadUserData() {
+  await Promise.all([loadUsers(1), loadRaw()]);
+}
+
+function renderRoleBars(data) {
+  const box = $("#role-bars");
+  const items = (data && data.items) || [];
+  $("#role-meta").textContent = data && data.total ? `共 ${data.total} 个账号` : "";
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">暂无分析结果，先运行扩散采集或点「重新分析」</div>';
+  } else {
+    const max = Math.max(...items.map((item) => item.count));
+    box.innerHTML = items
+      .map((item) => {
+        const color = ROLE_COLORS[item.role] || "#8a8f9c";
+        return `
+        <div class="bar-row">
+          <span title="${escapeHtml(item.label)}"><i class="dot" style="background:${color}"></i>${escapeHtml(item.label)}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, (item.count / max) * 100)}%;background:${color}"></div></div>
+          <b>${item.count}</b>
+        </div>`;
+      })
+      .join("");
+  }
+  $("#role-desc").innerHTML = ROLE_DESCRIPTIONS.map(
+    ([role, label, desc]) => `
+    <div class="role-desc-row">
+      <i class="dot" style="background:${ROLE_COLORS[role]}"></i>
+      <b>${label}</b>
+      <span>${desc}</span>
+    </div>`
+  ).join("");
 }
 
 async function openUserDrawer(secUid) {
@@ -1099,6 +1012,226 @@ async function analyzeNetwork() {
   }
 }
 
+
+/* ------------------------------------------------------------------ 用户地图 */
+const MAP_BUCKETS = [
+  { max: 0, color: "#eceef3", label: "0" },
+  { max: 2, color: "#ffc9d5", label: "1–2" },
+  { max: 5, color: "#ff93a9", label: "3–5" },
+  { max: 10, color: "#fb5b7d", label: "6–10" },
+  { max: Infinity, color: "#d81e46", label: "11+" },
+];
+
+const MAP_SORT_LABEL = { total: "账号", male: "男", female: "女" };
+
+const mapState = { geo: null, data: null, selected: "" };
+
+function mapColor(total) {
+  const bucket = MAP_BUCKETS.find((item) => total <= item.max) || MAP_BUCKETS[MAP_BUCKETS.length - 1];
+  return bucket.color;
+}
+
+async function loadMap() {
+  try {
+    const [data, geo] = await Promise.all([api("/api/users/map"), loadChinaGeo()]);
+    mapState.data = data;
+    renderMapStats(data);
+    drawChinaMap(geo, data);
+    renderRegionList(data);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function loadChinaGeo() {
+  if (mapState.geo) return mapState.geo;
+  const response = await fetch("/static/geo/china.json", { cache: "force-cache" });
+  if (!response.ok) throw new Error("地图数据加载失败");
+  mapState.geo = await response.json();
+  return mapState.geo;
+}
+
+function renderMapStats(data) {
+  const totals = data.totals || { total: 0, male: 0, female: 0, unknown: 0 };
+  $("#map-regions").textContent = (data.known || []).length;
+  $("#map-total").textContent = fmtNum(totals.total);
+  $("#map-male").textContent = fmtNum(totals.male);
+  $("#map-female").textContent = fmtNum(totals.female);
+  $("#map-meta").textContent = `共 ${fmtNum(totals.total)} 个账号 · 未知性别 ${fmtNum(totals.unknown)}`;
+}
+
+function buildProjection(geo, width, height) {
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  const visit = (coords) => {
+    if (typeof coords[0] === "number") {
+      const [lon, lat] = coords;
+      minLon = Math.min(minLon, lon);
+      maxLon = Math.max(maxLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      return;
+    }
+    coords.forEach(visit);
+  };
+  geo.features.forEach((feature) => visit(feature.geometry.coordinates));
+  const pad = 8;
+  const scale = Math.min(
+    (width - pad * 2) / (maxLon - minLon),
+    (height - pad * 2) / (maxLat - minLat)
+  );
+  const offsetX = (width - (maxLon - minLon) * scale) / 2;
+  const offsetY = (height - (maxLat - minLat) * scale) / 2;
+  return ([lon, lat]) => [offsetX + (lon - minLon) * scale, offsetY + (maxLat - lat) * scale];
+}
+
+function simplifyRing(points, tolerance) {
+  if (points.length <= 3) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = out[out.length - 1];
+    if (Math.hypot(points[i][0] - prev[0], points[i][1] - prev[1]) >= tolerance) {
+      out.push(points[i]);
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+function featureToPath(feature, project) {
+  const polygons =
+    feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+  let d = "";
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      const simplified = simplifyRing(ring.map(project), 0.9);
+      if (simplified.length < 3) continue;
+      d +=
+        "M" +
+        simplified.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L") +
+        "Z";
+    }
+  }
+  return d;
+}
+
+function drawChinaMap(geo, data) {
+  const svg = $("#china-map");
+  const empty = $("#map-empty");
+  const totals = (data && data.totals) || { total: 0 };
+  if (!totals.total) {
+    svg.innerHTML = "";
+    empty.classList.remove("hidden");
+    $("#map-legend").innerHTML = "";
+    return;
+  }
+  empty.classList.add("hidden");
+  const byRegion = new Map((data.regions || []).map((item) => [item.region, item]));
+  const project = buildProjection(geo, 820, 640);
+  const paths = [];
+  geo.features.forEach((feature) => {
+    const name = feature.properties && feature.properties.name;
+    if (!name) return;
+    const item = byRegion.get(name);
+    const total = item ? item.total : 0;
+    const d = featureToPath(feature, project);
+    if (!d) return;
+    paths.push(
+      `<path data-region="${escapeHtml(name)}" d="${d}" fill="${mapColor(total)}" stroke="#ffffff" stroke-width="0.7"></path>`
+    );
+  });
+  svg.innerHTML = paths.join("");
+
+  svg.querySelectorAll("path[data-region]").forEach((path) => {
+    const name = path.dataset.region;
+    path.addEventListener("mouseenter", (event) => showMapTip(event, name));
+    path.addEventListener("mousemove", moveMapTip);
+    path.addEventListener("mouseleave", hideMapTip);
+    path.addEventListener("click", () => selectMapRegion(name));
+  });
+
+  $("#map-legend").innerHTML = MAP_BUCKETS.map(
+    (bucket) => `<span class="legend-item"><i class="dot" style="background:${bucket.color}"></i>${bucket.label}</span>`
+  ).join("");
+}
+
+function showMapTip(event, region) {
+  const tip = $("#map-tip");
+  const item = ((mapState.data && mapState.data.regions) || []).find((row) => row.region === region);
+  tip.innerHTML = item
+    ? `<strong>${escapeHtml(region)}</strong>
+       <div>账号 ${fmtNum(item.total)} · 男 ${fmtNum(item.male)} · 女 ${fmtNum(item.female)}</div>
+       <div>性别未知 ${fmtNum(item.unknown)}</div>`
+    : `<strong>${escapeHtml(region)}</strong><div>暂无账号</div>`;
+  tip.classList.remove("hidden");
+  moveMapTip(event);
+}
+
+function moveMapTip(event) {
+  const tip = $("#map-tip");
+  const wrap = tip.parentElement.getBoundingClientRect();
+  const x = event.clientX - wrap.left;
+  const y = event.clientY - wrap.top;
+  tip.style.left = `${Math.min(Math.max(x + 14, 8), wrap.width - 190)}px`;
+  tip.style.top = `${Math.max(y - 12, 8)}px`;
+}
+
+function hideMapTip() {
+  $("#map-tip").classList.add("hidden");
+}
+
+function selectMapRegion(region) {
+  mapState.selected = region;
+  document.querySelectorAll(".region-row[data-region]").forEach((row) => {
+    row.classList.toggle("active", row.dataset.region === region);
+  });
+  const row = document.querySelector(`.region-row[data-region="${CSS.escape(region)}"]`);
+  if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function regionRow(item, sort, max) {
+  const value = Number(item[sort] || 0);
+  return `
+    <div class="bar-row region-row" data-region="${escapeHtml(item.region)}">
+      <span title="${escapeHtml(item.region)}">${escapeHtml(item.region)}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.max(3, (value / Math.max(max, 1)) * 100)}%"></div>
+      </div>
+      <b>${MAP_SORT_LABEL[sort] || "账号"} ${fmtNum(value)}
+        <small class="muted">总数 ${fmtNum(item.total)} · ♂${fmtNum(item.male)} ♀${fmtNum(item.female)}</small>
+      </b>
+    </div>`;
+}
+
+function renderRegionList(data) {
+  const sort = $("#map-sort").value;
+  const known = [...(data.known || [])].sort(
+    (a, b) => b[sort] - a[sort] || b.total - a.total
+  );
+  const max = Math.max(...known.map((item) => Number(item[sort] || 0)), 1);
+  $("#region-list").innerHTML = known.length
+    ? known.map((item) => regionRow(item, sort, max)).join("")
+    : '<div class="empty">暂无数据</div>';
+
+  const others = [...(data.others || [])].sort((a, b) => b.total - a.total);
+  const otherMax = Math.max(...others.map((item) => item.total), 1);
+  $("#region-others").innerHTML = others.length
+    ? others.map((item) => regionRow(item, "total", otherMax)).join("")
+    : '<div class="empty">暂无数据</div>';
+
+  document.querySelectorAll(".region-row[data-region]").forEach((row) => {
+    row.classList.toggle("active", row.dataset.region === mapState.selected);
+    row.addEventListener("click", () => {
+      const name = row.dataset.region;
+      selectMapRegion(name);
+      const item = (data.regions || []).find((entry) => entry.region === name);
+      if (item) toast(`${name}：账号 ${item.total} · 男 ${item.male} · 女 ${item.female}`);
+    });
+  });
+}
+
 /* ------------------------------------------------------------------ 设置 */
 async function openSettings() {
   try {
@@ -1175,12 +1308,17 @@ function bindEvents() {
   });
 
   $("#key-metric").addEventListener("change", renderKeyUsers);
+  $("#map-sort").addEventListener("change", () => {
+    if (mapState.data) renderRegionList(mapState.data);
+  });
   $("#btn-user-search").addEventListener("click", () => loadUsers(1));
   $("#user-q").addEventListener("keydown", (event) => {
     if (event.key === "Enter") loadUsers(1);
   });
   $("#user-sort").addEventListener("change", () => loadUsers(1));
   $("#user-depth").addEventListener("change", () => loadUsers(1));
+  $("#user-role").addEventListener("change", () => loadUsers(1));
+  $("#user-gender").addEventListener("change", () => loadUsers(1));
   $("#btn-user-prev").addEventListener("click", () => loadUsers(Math.max(1, networkState.users.page - 1)));
   $("#btn-user-next").addEventListener("click", () => loadUsers(networkState.users.page + 1));
   $("#btn-analyze").addEventListener("click", analyzeNetwork);
@@ -1192,10 +1330,6 @@ function bindEvents() {
     const row = event.target.closest("[data-sec]");
     if (row) openUserDrawer(row.dataset.sec);
   });
-  window.addEventListener("resize", () => {
-    if (state.view === "network" && networkState.graph.nodes.length) drawGraph(networkState.graph);
-  });
-
   $("#btn-settings").addEventListener("click", openSettings);
   $("#modal-close").addEventListener("click", () => $("#modal-mask").classList.add("hidden"));
   $("#modal-mask").addEventListener("click", (event) => {

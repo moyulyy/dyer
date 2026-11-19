@@ -31,9 +31,17 @@
         <svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7" /></svg>
         <span>数据概览</span>
       </button>
+      <button class="nav-item" data-view="users">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19c0-3.3 2.5-5.4 5.5-5.4s5.5 2.1 5.5 5.4M16 5.4a3 3 0 0 1 0 5.8M18 13.8c1.7.7 2.8 2.3 2.8 4.4" /></svg>
+        <span>用户数据</span>
+      </button>
       <button class="nav-item" data-view="network">
         <svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="2.4" /><circle cx="18" cy="17" r="2.4" /><circle cx="12" cy="6" r="2.4" /><path d="M7.6 15.2 10.9 8M16.4 15.2 13.1 8M8.4 17h7.2" /></svg>
         <span>用户网络</span>
+      </button>
+      <button class="nav-item" data-view="map">
+        <svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14" /></svg>
+        <span>用户地图</span>
       </button>
     </nav>
 
@@ -265,6 +273,84 @@
       </div>
     </section>
 
+    <!-- ===================== 用户数据 ===================== -->
+    <section id="view-users" class="view hidden">
+      <div class="card">
+        <div class="filters">
+          <input id="user-q" class="grow" type="search" placeholder="搜索昵称、抖音号、签名或 sec_uid" />
+          <select id="user-role">
+            <option value="">全部角色</option>
+            <option value="hub">核心影响者</option>
+            <option value="bridge">跨圈桥接者</option>
+            <option value="community_leader">社区核心</option>
+            <option value="active_commenter">活跃互动者</option>
+            <option value="creator">内容创作者</option>
+            <option value="peripheral">长尾账号</option>
+            <option value="isolated">孤立账号</option>
+          </select>
+          <select id="user-gender">
+            <option value="">全部性别</option>
+            <option value="1">男</option>
+            <option value="2">女</option>
+            <option value="0">未知</option>
+          </select>
+          <select id="user-depth">
+            <option value="">全部层级</option>
+            <option value="0">种子（0 层）</option>
+            <option value="1">1 层</option>
+            <option value="2">2 层</option>
+            <option value="3">3 层</option>
+          </select>
+          <select id="user-sort">
+            <option value="pagerank">按 PageRank</option>
+            <option value="influence">按影响力分</option>
+            <option value="degree">按连接度</option>
+            <option value="betweenness">按介数</option>
+            <option value="followers">按粉丝数</option>
+            <option value="depth">按扩散层级</option>
+          </select>
+          <button class="btn btn-primary" id="btn-user-search">查询</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:56px">头像</th>
+                <th>用户</th>
+                <th style="width:88px" class="num">粉丝</th>
+                <th style="width:70px" class="num">作品</th>
+                <th style="width:80px" class="num">获赞</th>
+                <th style="width:90px">IP 属地</th>
+                <th style="width:60px">性别</th>
+                <th style="width:60px" class="num">层级</th>
+                <th style="width:110px">角色</th>
+                <th style="width:80px" class="num">影响力</th>
+                <th style="width:80px" class="num">连接度</th>
+                <th style="width:80px">社区</th>
+              </tr>
+            </thead>
+            <tbody id="users-body"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span class="muted small" id="users-total"></span>
+          <div class="pager-actions">
+            <button class="btn btn-ghost" id="btn-user-prev">上一页</button>
+            <span id="user-page-info" class="small"></span>
+            <button class="btn btn-ghost" id="btn-user-next">下一页</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>原始数据</h2>
+          <span class="muted small" id="raw-meta"></span>
+        </div>
+        <div id="raw-list" class="raw-list"><div class="empty">暂无原始数据</div></div>
+      </div>
+    </section>
+
     <!-- ===================== 用户网络 ===================== -->
     <section id="view-network" class="view hidden">
       <div class="stat-grid">
@@ -289,25 +375,16 @@
       <div class="split">
         <div class="card">
           <div class="card-head">
-            <h2>社交网络图谱</h2>
-            <span class="muted small" id="graph-meta"></span>
-          </div>
-          <div class="graph-wrap">
-            <canvas id="network-canvas" width="900" height="460"></canvas>
-            <div id="graph-empty" class="empty">暂无网络数据，先运行一次「扩散采集」任务</div>
-            <div id="graph-tip" class="graph-tip hidden"></div>
-          </div>
-          <div class="legend" id="graph-legend"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
             <h2>关键节点</h2>
-            <select id="key-metric">
-              <option value="pagerank">按 PageRank</option>
-              <option value="betweenness">按介数中心性</option>
-              <option value="degree">按连接度</option>
-            </select>
+            <div class="inline-actions">
+              <select id="key-metric">
+                <option value="pagerank">按 PageRank</option>
+                <option value="betweenness">按介数中心性</option>
+                <option value="degree">按连接度</option>
+                <option value="influence">按影响力分</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="btn-analyze">重新分析</button>
+            </div>
           </div>
           <div id="key-users" class="hot-list"><div class="empty">暂无分析结果</div></div>
           <div class="card-head" style="margin-top:18px">
@@ -316,62 +393,71 @@
           </div>
           <div id="communities" class="bars"><div class="empty">暂无数据</div></div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="filters">
-          <input id="user-q" class="grow" type="search" placeholder="搜索昵称、抖音号或 sec_uid" />
-          <select id="user-sort">
-            <option value="pagerank">按 PageRank</option>
-            <option value="degree">按连接度</option>
-            <option value="betweenness">按介数</option>
-            <option value="followers">按粉丝数</option>
-            <option value="depth">按扩散层级</option>
-          </select>
-          <select id="user-depth">
-            <option value="">全部层级</option>
-            <option value="0">种子（0 层）</option>
-            <option value="1">1 层</option>
-            <option value="2">2 层</option>
-            <option value="3">3 层</option>
-          </select>
-          <button class="btn btn-primary" id="btn-user-search">查询</button>
-          <button class="btn btn-ghost" id="btn-analyze">重新分析</button>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:60px">头像</th>
-                <th>用户</th>
-                <th style="width:110px" class="num">粉丝</th>
-                <th style="width:80px" class="num">层级</th>
-                <th style="width:100px" class="num">PageRank</th>
-                <th style="width:90px" class="num">连接度</th>
-                <th style="width:90px" class="num">介数</th>
-                <th style="width:90px">社区</th>
-              </tr>
-            </thead>
-            <tbody id="users-body"></tbody>
-          </table>
-        </div>
-        <div class="pager">
-          <span class="muted small" id="users-total"></span>
-          <div class="pager-actions">
-            <button class="btn btn-ghost" id="btn-user-prev">上一页</button>
-            <span id="user-page-info" class="small"></span>
-            <button class="btn btn-ghost" id="btn-user-next">下一页</button>
+        <div class="card">
+          <div class="card-head">
+            <h2>用户类型分布</h2>
+            <span class="muted small" id="role-meta"></span>
           </div>
+          <div id="role-bars" class="bars"><div class="empty">暂无分析结果</div></div>
+          <div class="role-desc" id="role-desc"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 用户地图 ===================== -->
+    <section id="view-map" class="view hidden">
+      <div class="stat-grid">
+        <div class="card stat-card">
+          <span class="stat-label">覆盖地区</span>
+          <strong id="map-regions">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">账号总数</span>
+          <strong id="map-total">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">男性账号</span>
+          <strong id="map-male">0</strong>
+        </div>
+        <div class="card stat-card">
+          <span class="stat-label">女性账号</span>
+          <strong id="map-female">0</strong>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-head">
-          <h2>原始数据</h2>
-          <span class="muted small" id="raw-meta"></span>
+      <div class="split map-split">
+        <div class="card">
+          <div class="card-head">
+            <h2>账号地区分布</h2>
+            <span class="muted small" id="map-meta"></span>
+          </div>
+          <div class="map-wrap">
+            <svg id="china-map" viewBox="0 0 820 640" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="map-tip" class="graph-tip hidden"></div>
+            <div id="map-empty" class="empty hidden">暂无 IP 属地数据，先运行一次采集任务</div>
+          </div>
+          <div class="legend" id="map-legend"></div>
+          <p class="muted small map-note">按 IP 属地统计账号数量；点击省份查看男女人数。地图边界仅作示意。</p>
         </div>
-        <div id="raw-list" class="raw-list"><div class="empty">暂无原始数据</div></div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>地区明细</h2>
+            <select id="map-sort">
+              <option value="total">按账号数</option>
+              <option value="male">按男性数</option>
+              <option value="female">按女性数</option>
+            </select>
+          </div>
+          <div id="region-list" class="bars"><div class="empty">暂无数据</div></div>
+          <div class="card-head" style="margin-top:16px">
+            <h2>其他 / 未识别</h2>
+          </div>
+          <div id="region-others" class="bars"><div class="empty">暂无数据</div></div>
+        </div>
       </div>
+    </section>
     </section>
   </main>
 </div>

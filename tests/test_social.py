@@ -22,7 +22,15 @@ from app.social.cleaning import (
     normalize_user,
     to_int,
 )
-from app.social.graph import analyze_network, compute_metrics, latest_analysis
+import networkx as nx
+
+from app.social.graph import (
+    ROLE_LABELS,
+    analyze_network,
+    classify_roles,
+    compute_metrics,
+    latest_analysis,
+)
 from app.social.importer import import_network_data
 
 SEC_A = "SEC_ALPHA_0001"
@@ -311,3 +319,75 @@ def test_network_api(seeded):
 
         rerun = client.post("/api/network/analyze").json()
         assert rerun["run_id"] >= 1
+
+
+# --------------------------------------------------------------------- 用户角色画像
+def test_classify_roles_covers_all_types():
+    graph = nx.Graph()
+    graph.add_edges_from(
+        [("A", "B"), ("A", "C"), ("A", "D"), ("B", "C"), ("B", "E"), ("B", "F"), ("D", "E"), ("D", "F")]
+    )
+    roles = classify_roles(
+        nodes=["A", "B", "C", "D", "E", "F", "G"],
+        undirected=graph,
+        degree={"A": 3, "B": 4, "C": 2, "D": 3, "E": 2, "F": 2, "G": 0},
+        in_degree={"A": 1, "B": 4, "C": 2, "D": 0, "E": 1, "F": 0, "G": 0},
+        out_degree={"A": 3, "B": 0, "C": 0, "D": 3, "E": 0, "F": 1, "G": 0},
+        pagerank={"A": 0.20, "B": 0.35, "C": 0.30, "D": 0.05, "E": 0.05, "F": 0.03, "G": 0.02},
+        betweenness={"A": 0.6, "B": 0.1, "C": 0.2, "D": 0.02, "E": 0.02, "F": 0.01, "G": 0.0},
+        community_of={"A": 2, "B": 0, "C": 1, "D": 1, "E": 1, "F": 1, "G": 1},
+        followers={"A": 10, "B": 100, "C": 50, "D": 5, "E": 5, "F": 5, "G": 0},
+        aweme_counts={node: 0 for node in "ABCDEFG"},
+    )
+
+    assert roles["A"]["role"] == "bridge"
+    assert roles["B"]["role"] == "hub"
+    assert roles["C"]["role"] == "community_leader"
+    assert roles["D"]["role"] == "active_commenter"
+    assert roles["E"]["role"] == "creator"
+    assert roles["F"]["role"] == "peripheral"
+    assert roles["G"]["role"] == "isolated"
+
+    assert roles["A"]["cross_community_ratio"] == 1.0
+    assert 0 <= roles["B"]["influence_score"] <= 100
+    assert roles["B"]["influence_score"] == max(item["influence_score"] for item in roles.values())
+    assert set(ROLE_LABELS) >= {item["role"] for item in roles.values()}
+
+
+def test_compute_metrics_emits_roles():
+    users = [
+        {"sec_uid": f"SEC_{name}", "nickname": name, "follower_count": 0, "aweme_count": 0, "depth": 0, "profile_complete": True}
+        for name in ("A", "B", "C", "D")
+    ]
+    edges = [
+        {"src_sec_uid": src, "dst_sec_uid": "SEC_A", "rel_type": "commented_on", "weight": 1}
+        for src in ("SEC_B", "SEC_C", "SEC_D")
+    ]
+    result = compute_metrics(users, edges)
+    assert result["metrics"]["SEC_A"]["role"] == "hub"
+    assert result["summary"]["roles"]
+    assert sum(item["count"] for item in result["summary"]["roles"]) == 4
+    assert result["summary"]["top_influence"]
+
+
+def test_users_roles_and_map_api(seeded):
+    with TestClient(app) as client:
+        roles = client.get("/api/users/roles").json()
+        assert roles["total"] == 5
+        assert sum(item["count"] for item in roles["items"]) == 5
+        assert all(item["label"] for item in roles["items"])
+
+        # 路由顺序：/users/map 不能被 /users/{sec_uid} 吞掉
+        mapping = client.get("/api/users/map").json()
+        assert mapping["totals"]["total"] == 5
+        gd = next((item for item in mapping["known"] if item["region"] == "广东省"), None)
+        assert gd is not None and gd["total"] >= 1
+
+        filtered = client.get("/api/users?role=hub").json()
+        assert filtered["total"] >= 1
+        assert all(item["role"] == "hub" for item in filtered["items"])
+
+        male = client.get("/api/users?gender=1").json()
+        assert male["total"] == 0  # 测试数据没有性别 1 的账号
+        unknown = client.get("/api/users?gender=0").json()
+        assert unknown["total"] == 5

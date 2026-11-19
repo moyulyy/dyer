@@ -461,3 +461,46 @@ input:focus, select:focus, textarea:focus {
   font-size: 11.5px;
   line-height: 1.6;
 }
+
+/* ---------------------------------------------------------------- 用户画像 / 地图 */
+.inline-actions { display: flex; align-items: center; gap: 8px; }
+.role-badge {
+  display: inline-block;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.role-desc { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.role-desc-row {
+  display: grid;
+  grid-template-columns: 12px 96px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--muted);
+}
+.role-desc-row b { color: var(--ink-soft); font-weight: 600; }
+
+/* ---------------------------------------------------------------- 用户地图 */
+.map-wrap { position: relative; }
+#china-map {
+  width: 100%;
+  height: auto;
+  display: block;
+  min-height: 420px;
+}
+#china-map path { transition: filter 0.15s ease, opacity 0.15s ease; cursor: pointer; }
+#china-map path:hover { filter: brightness(0.88); }
+.map-note { margin-top: 10px; line-height: 1.7; }
+.region-row { grid-template-columns: 108px minmax(0, 1fr) 104px; }
+.region-row b { font-weight: 600; line-height: 1.35; }
+.region-row b small { display: block; font-weight: 400; font-size: 10.5px; }
+.region-row.active { background: var(--brand-soft); }
+.region-row { cursor: pointer; padding: 6px 6px; border-radius: 8px; }
+
+.map-split { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+.card-head h2 { white-space: nowrap; }
+@media (max-width: 1100px) {
+  .map-split { grid-template-columns: minmax(0, 1fr); }
+}

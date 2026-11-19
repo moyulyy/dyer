@@ -184,6 +184,10 @@ class UserMetric(Base):
     betweenness: Mapped[float] = mapped_column(Float, default=0.0)
     community: Mapped[int] = mapped_column(Integer, default=-1, index=True)
     component: Mapped[int] = mapped_column(Integer, default=-1)
+    # 用户特征画像（由 app/social/graph.py 的规则算法给出）
+    role: Mapped[str] = mapped_column(String(32), default="peripheral", index=True)
+    influence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    cross_community_ratio: Mapped[float] = mapped_column(Float, default=0.0)
     computed_at: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
@@ -226,6 +230,11 @@ _MIGRATIONS = {
     "jobs": {
         "user_count": "INTEGER DEFAULT 0",
         "relation_count": "INTEGER DEFAULT 0",
+    },
+    "user_metrics": {
+        "role": "VARCHAR(32) DEFAULT 'peripheral'",
+        "influence_score": "FLOAT DEFAULT 0",
+        "cross_community_ratio": "FLOAT DEFAULT 0",
     },
 }
 
